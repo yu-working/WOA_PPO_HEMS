@@ -66,6 +66,7 @@ WOA_PPO_HEMS/
 ├─ ppo_pmv_balance_online.py   # PPO決策運算程式
 ├─ ppo_pmv_balance_retrain.py  # PPO模型訓練程式
 ├─ WOA_pmv_balance_online.py   # WOA決策運算程式
+├─ UserFeedbackSystem.py       # 使用者調控回饋程式
 ├─ user_feedback_log.csv       # 使用者調控回饋紀錄
 ├─ config/
 │   ├─ 紅外線遙控器冷氣調控指令集.csv      # 冷氣遙控指令集
