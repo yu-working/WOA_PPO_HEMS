@@ -2,7 +2,7 @@
 ![License](https://img.shields.io/badge/license-MIT-yellow)
 ![Language](https://img.shields.io/badge/language-python-blue)
 
- > 結合PPO 、 WOA 與 Decision tree 的用電分配最佳化家庭能源管理系統
+ > 結合PPO 、 WOA 與 Decision tree 的能耗與舒適度加權平衡家庭能源管理系統
 
 ## 專案簡介
 
