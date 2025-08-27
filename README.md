@@ -2,7 +2,7 @@
 ![License](https://img.shields.io/badge/license-MIT-yellow)
 ![Language](https://img.shields.io/badge/language-python-blue)
 
- > 結合PPO 、 WOA 與 ANFIS 的用電分配最佳化家庭能源管理系統
+ > 結合PPO 、 WOA 與 Decision tree 的用電分配最佳化家庭能源管理系統
 
 ## 專案簡介
 
@@ -12,7 +12,7 @@
 
 #### 1.鯨魚優化演算法（Whale Optimization Algorithm, WOA）
 
- - 結合 自適應神經模糊推理系統（Adaptive Neuro-Fuzzy Inference System, ANFIS） 與 PMV（Predicted Mean Vote） 指標。
+ - 結合 決策樹（Decision Tree） 與 PMV（Predicted Mean Vote） 指標。
  - 模擬 HEMS 的決策過程，平衡能源使用與居住舒適度。
 
 #### 2.近端策略優化（Proximal Policy Optimization, PPO）
@@ -42,9 +42,9 @@
 
  - 使用行為網路 (Policy Network) 和價值網路 (Value Network) 進行學習，透過強化學習不斷優化設備運行策略以降低電費並保持舒適。
 
-#### 2.WOA 優化溫濕度設定並透過ANFIS 預測設備狀態
+#### 2.WOA 優化溫濕度設定並透過 Decision tree 預測設備狀態
 
- - 搜索最佳室內溫度與濕度，使能源成本最低且 PMV 舒適度在指定範圍內，並根據WOA所計算出的室內條件，透過ANFIS預測並輸出各設備的最佳運行設定。
+ - 搜索最佳室內溫度與濕度，使能源成本最低且 PMV 舒適度在指定範圍內，並根據WOA所計算出的室內條件，透過Decision tree預測並輸出各設備的最佳運行設定。
 
 #### 3.PMV 舒適度評估
 
@@ -53,6 +53,7 @@
 #### 4.電費計算
 
  - 根據台灣分時電價計算不同時段的耗電成本。
+
 
 ## 主要程式架構
 
@@ -64,15 +65,12 @@ WOA_PPO_HEMS/
 ├─ db_utility.py               # 資料庫連接程式，負責將生成的決策存入DB
 ├─ ppo_pmv_balance_online.py   # PPO決策運算程式
 ├─ ppo_pmv_balance_retrain.py  # PPO模型訓練程式
-├── anfis_pmv_balance.py       # ANFIS模型訓練程式
-├── WOA_pmv_balance_online.py  # WOA決策運算程式
+├─ WOA_pmv_balance_online.py   # WOA決策運算程式
+├─ user_feedback_log.csv       # 使用者調控回饋紀錄
 ├─ config/
-│   ├─ 紅外線遙控器冷氣調控指令集.csv  # 冷氣遙控指令集
-│   ├─ pmv_ul_ll.csv                # 使用者個人化 PMV 舒適區間
-│   ├─ anfis_model_pmv_balance.pt         # ANFIS模型存檔
-│   ├─ scaler_pmv_balance.pkl             # ANFIS縮放器
-│   ├─ config_pmv_balance.pkl             # ANFIS配置參數
-│   └─ ppo_pmv_balance_{room_id}.pt       # PPO模型存檔
+│   ├─ 紅外線遙控器冷氣調控指令集.csv      # 冷氣遙控指令集
+│   ├─ pmv_ul_ll.csv                     # 使用者個人化 PMV 舒適區間
+│   └─ ppo_pmv_balance_{room_id}.pt      # PPO模型存檔
 ├─ data/
 │   ├─ data-1743586080241.csv           # 測試用 sample 檔
 │   └─ nilm_data_ritaluetb_hour.csv     # 歷史用電數據

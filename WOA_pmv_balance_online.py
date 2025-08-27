@@ -1,11 +1,12 @@
 import numpy as np
 from typing import List, Tuple
 import random
-from anfis_pmv_balance import ANFIS
+from sklearn.tree import DecisionTreeClassifier
 import pandas as pd
 import time
 from pythermalcomfort.models import pmv_ppd
 import math
+from UserFeedbackSystem import UserFeedbackSystem
 #%%
 class WhaleOptimizationHEMS:
     def __init__(
@@ -14,11 +15,11 @@ class WhaleOptimizationHEMS:
         max_iter: int = 100,
         temp_bounds: Tuple[float, float] = (26.0, 35.0),
         humidity_bounds: Tuple[float, float] = (30.0, 70.0),
-        #co2_bounds: Tuple[int, int] = (400, 2000),
         b: float = 1.0,
         a_decrease_factor: float = 2,
-        pmv_up: float = 0.5,
-        pmv_down: float = -0.5
+        pmv_up: float = 0.15,
+        pmv_down: float = -0.15,
+        device: list = ['dehumidifier', 'ac', 'fan']
     ):
         """
         初始化鯨魚優化演算法用於家庭能源管理系統
@@ -35,14 +36,69 @@ class WhaleOptimizationHEMS:
         self.max_iter = max_iter
         self.temp_bounds = temp_bounds
         self.humidity_bounds = humidity_bounds
-        #self.co2_bounds = co2_bounds
         self.n_dims = 2  # 溫度和濕度兩個維度
         self.b = b
         self.a_decrease_factor = a_decrease_factor
-        self.anfis = ANFIS.load()
         self.pmv_up = pmv_up
         self.pmv_down = pmv_down
+        self.device = device
         
+    def decision_tree_train(self):
+        # 範例訓練資料 (features: 現在溫度、現在濕度、目標溫度、目標濕度)
+        # target: [除濕機啟閉, 除濕機濕度, 冷氣溫度, 冷氣風扇, 冷氣模式, 電風扇啟閉]
+        data = [
+            [30, 80, 27, 60, 1, 60, 27, 1, 1, 1],  # 範例: 太熱太潮 -> 除濕 + 冷氣 + 電風扇
+            [25, 70, 27, 60, 1, 60, 27, 1, 1, 1], # 範例: 接近目標 -> 最小調整
+            [28, 65, 26, 67, 0, 0, 26, 1, 1, 1], # 範例: 溫度高 -> 冷氣+風扇
+            [24, 80, 27, 60, 1, 60, 27, 2, 0, 0], # 範例: 濕度高 -> 除濕+冷氣
+            [28, 40, 26, 68, 0, 0, 26, 1, 1, 1], # 範例: 濕度低 -> dehumi_on = 0 hum = 0
+            [22, 40, 26, 65, 0, 0, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on,
+            [28, 67, 27, 60, 1, 60, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [27, 60, 26.5, 73, 0, 0, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [26, 60, 26.5, 73, 0, 0, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [27, 80, 26.5, 73, 1, 70, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [26, 80, 26.5, 73, 1, 70, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [27.2, 80, 26.8, 73, 1, 70, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [26.7, 67, 26.5, 65, 1, 65, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [26.9, 65, 26.5, 67, 0, 0, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [27.1, 60, 26.8, 60, 0, 0, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+            [26.4, 65, 26.7, 65, 0, 0, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
+        ]
+
+        columns = ['current_temp', 'current_humidity', 'target_temp', 'target_humidity', 
+                'dehumidifier', 'dehumidifier_hum',
+                'ac_temp', 'ac_fan', 'ac_mode', 'fan_state']
+
+        df = pd.DataFrame(data, columns=columns)
+
+        # 特徵與目標
+        X = df[['current_temp', 'current_humidity', 'target_temp', 'target_humidity']]
+        y = df[['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state']]
+
+        # 用決策樹分類器訓練，每個輸出一個樹
+        trees = {}
+        for col in y.columns:
+            clf = DecisionTreeClassifier()
+            clf.fit(X, y[col])
+            trees[col] = clf
+        return trees
+
+    def predict_control(self, trees, current_temp, current_humidity, target_temp, target_humidity):
+        input_data = pd.DataFrame([{
+            'current_temp': current_temp,
+            'current_humidity': current_humidity,
+            'target_temp': target_temp,
+            'target_humidity': target_humidity,
+        }])
+        output = {}
+        for col, tree in trees.items():
+            output[col] = int(tree.predict(input_data)[0])
+        if int(output['dehumidifier'] == 1) & int(output['dehumidifier_hum'] == 0):
+            output['dehumidifier'] = 0
+
+        return output
+            
+
     def initialize_population(self) -> np.ndarray:
         """初始化鯨魚群體在範圍內的隨機位置"""
         
@@ -57,28 +113,9 @@ class WhaleOptimizationHEMS:
         for i in range(self.n_whales):
             population_humd.append(random.randint(self.humidity_bounds[0], self.humidity_bounds[1]))
         population_humd = np.array(population_humd)
-        
-        # 初始化二氧化碳濃度
-        '''
-        co2 = []
-        for i in range(self.n_whales):
-            co2.append(random.randint(self.co2_bounds[0], self.co2_bounds[1]))
-        co2 = np.array(co2)
-        '''
-        out_temperature = []
-        for i in range(self.n_whales):
-            out_temperature.append(random.randint(24, 35))
-        out_temperature = np.array(out_temperature)
-        
-        # 濕度數據 (40-80%)
-        out_humidity = []
-        for i in range(self.n_whales):
-            out_humidity.append(random.randint(40, 80))
-        out_humidity = np.array(out_humidity)
-           
-        out_conditions = np.column_stack([out_temperature, out_humidity])
+
         population = np.column_stack([population_temp, population_humd])
-        return population#, out_conditions
+        return population
     
     def calculate_power(self, dehumidifier_humidity, indoor_humidity,
                         dehumidifier_on, fan_on, ac_temperature, indoor_temp,
@@ -99,14 +136,14 @@ class WhaleOptimizationHEMS:
         fan_consumption = fan_power if fan_on else 0
 
         # 計算冷氣功耗
-        if ac_mode_weight[ac_mode] == 1:
+        if ac_mode_weight == 1:
             ac_consumption = ac_base_power * ac_mode_weight[ac_mode] * (1 + 0.1 * max(0, indoor_temp-ac_temperature)) * ac_fan_weight[ac_fan_speed] 
         else: 
             ac_consumption = ac_base_power * ac_mode_weight[ac_mode] * ac_fan_weight[ac_fan_speed] 
 
         return dehumidifier_consumption + fan_consumption + ac_consumption
     
-    def fitness_function(self, temp: float, humidity: float) -> float:
+    def fitness_function(self, temp: float, humidity: float, trees) -> float:
         """
         計算適應度值，基於舒適度和能源消耗
         
@@ -161,14 +198,16 @@ class WhaleOptimizationHEMS:
         else:
             humidity_deviation = 1
         
-        # 使用ANFIS預測設備狀態
-        device_state = self.anfis.predict(X=np.array([temp, humidity]).reshape(1, -1))
-        device_state = pd.DataFrame(device_state, columns=['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state'])
+        # 預測設備狀態
         
-        # 計算能源消耗
-        energy_consumption = self.calculate_power(device_state['dehumidifier_hum'][0], humidity,
-                                                  device_state['dehumidifier'][0],device_state['fan_state'][0], device_state['ac_temp'][0], temp, 
-                                                  device_state['ac_mode'][0], device_state['ac_fan'][0])
+        device_state = self.predict_control(trees, temp, humidity, temp, humidity)
+        device_state = pd.DataFrame(device_state, columns=['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state'], index=[0])
+        
+        if 'dehumidifier' in self.device: # 未持有除濕機時不運算
+              pass
+        else:
+            device_state.loc[device_state.index[0], 'dehumidifier'] = 0  # 除濕機開關
+            device_state.loc[device_state.index[0], 'dehumidifier_hum'] = 0  # 除濕機設定濕度 40-70%
         
         # 計算濕度變化的潛熱
         m = ((217*(humidity/100)*6.112*math.exp(17.62*temp/(temp+243.12)))/(temp+273.15)-(217*(device_state.iloc[0, 1]/100)*6.112*math.exp(17.62*temp/(temp+243.12))))
@@ -176,16 +215,13 @@ class WhaleOptimizationHEMS:
         # 計算PMV值
         pmv = pmv_ppd(tdb=temp, tr=temp, vr=0.25, 
                       rh=humidity, met=1, clo=0.5, limit_inputs=False)
-        
         # PMV值超出舒適範圍時給予懲罰
-        pmv_value = (pmv['pmv'])
-        if float(self.pmv_down)<pmv_value<float(self.pmv_up):
+        if float(self.pmv_down) < pmv['pmv'] < float(self.pmv_up) and abs(pmv['pmv']) != 0:
             pass
-        else: pmv['pmv'] = 10 # 較大的懲罰
+        else: pmv['pmv'] = 1000 # 較大的懲罰
         
         # 計算最終適應度值
         fitness = abs((temp_deviation*1.005*w_temp+humidity_deviation*(m)*2260*w_humidity)) * abs(pmv['pmv'])
-        
         return fitness
     
     def apply_bounds(self, position: np.ndarray) -> np.ndarray:
@@ -200,13 +236,6 @@ class WhaleOptimizationHEMS:
             self.humidity_bounds[0], 
             self.humidity_bounds[1]
         )
-        '''
-        position[2] = np.clip(
-            position[2], 
-            self.co2_bounds[0], 
-            self.co2_bounds[1]
-        )
-        '''
         return position
     
     def change(self, device_date, indoor_data):
@@ -215,17 +244,16 @@ class WhaleOptimizationHEMS:
         # 溫濕度變化模型
         temp_change = 0
         humidity_change = 0
+        target_humidity = 40
         
         # 除濕機影響
         if device_date.iloc[0, 0] == 1:
-            target_humidity = device_date.iloc[0, 1]
+            target_humidity = device_date['dehumidifier_hum'].iloc[0]
             humidity_change = -7.1 * 0.9
-        
+    
         # 冷氣影響
         temp_diff = indoor_data[0] - device_date.iloc[0, 2]
         cooling_rate = 0.7 if device_date.iloc[0, 4] == 1 else 0
-        #outdoor_influence = indoor_data[0] * 0.05
-        
         temp_change = -cooling_rate * temp_diff
         
         # 風扇影響
@@ -234,24 +262,11 @@ class WhaleOptimizationHEMS:
         
         # 更新室內狀態
         indoor_temp = np.clip(indoor_data[0] + temp_change, 20, 35)
-        indoor_humidity = np.clip(indoor_data[1] + humidity_change, 40, 85)
-        
-        # 更新室外狀態
-        '''
-        outdoor_temp = np.clip(
-            outdoor_data[0] + np.random.uniform(-1, 1), 
-            20, 40
-        )
-        outdoor_humidity = np.clip(
-            outdoor_data[1] + np.random.uniform(-2, 2), 
-            40, 90
-        )
-        '''
+        indoor_humidity = np.clip(indoor_data[1] + humidity_change, target_humidity, 85)
         new_indoor_data = np.array([indoor_temp, indoor_humidity]).reshape(1, 2)
-        #new_outdoor_data = np.array([outdoor_temp, outdoor_humidity]).reshape(1, 2)
-        return new_indoor_data#, new_outdoor_data
+        return new_indoor_data
     
-    def optimize(self, indoor_data) -> Tuple[np.ndarray, float, List[float]]:
+    def optimize(self, indoor_data, trees) -> Tuple[np.ndarray, float, List[float]]:
         """
         執行鯨魚優化演算法
         
@@ -265,7 +280,7 @@ class WhaleOptimizationHEMS:
         
         # 初始化最佳解
         fitness_values = np.array([
-            self.fitness_function(pos[0], pos[1]) 
+            self.fitness_function(pos[0], pos[1], trees) 
             for pos in population
         ])
         best_whale_idx = np.argmin(fitness_values)
@@ -316,7 +331,8 @@ class WhaleOptimizationHEMS:
                 # 如果需要，更新最佳解
                 current_fitness = self.fitness_function(
                     population[i][0], 
-                    population[i][1]
+                    population[i][1],
+                    trees
                 )
                 if current_fitness < best_fitness:
                     best_position = population[i].copy()
@@ -325,51 +341,68 @@ class WhaleOptimizationHEMS:
             fitness_history.append(best_fitness)
             
         # 根據室內溫度變化決定使用哪個位置進行預測
-        if indoor_data[-1][0] > best_position[0]:
-            device_state = ANFIS.predict(self.anfis, indoor_data[-1].reshape(1, -1))
-            pmv = pmv_ppd(tdb=indoor_data[-1][0], tr=indoor_data[-1][0], vr=0.25, 
-                          rh=indoor_data[-1][1], met=1, clo=0.5, limit_inputs=False)
+        
+        indoor_pmv = pmv_ppd(tdb=indoor_data[-1][0], tr=indoor_data[-1][0], vr=0.25, 
+                      rh=indoor_data[-1][1], met=1, clo=0.5, limit_inputs=False)
+        
+        best_pmv = pmv_ppd(tdb=best_position[0], tr=best_position[0], vr=0.25, 
+                      rh=best_position[1], met=1, clo=0.5, limit_inputs=False)
+        #插入Decision Tree
+        if abs(indoor_pmv['pmv']) < abs(best_pmv['pmv']):
+            device_state = self.predict_control(trees, indoor_data[-1][0], indoor_data[-1][1], indoor_data[-1][0], indoor_data[-1][1])
         else:
-            device_state = ANFIS.predict(self.anfis, best_position.reshape(1, -1))
-            pmv = pmv_ppd(tdb=best_position[0], tr=best_position[0], vr=0.25, 
-                          rh=best_position[1], met=1, clo=0.5, limit_inputs=False)
-                          
-        device_state = pd.DataFrame(device_state, columns=['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state'])
+            device_state = self.predict_control(trees, indoor_data[-1][0], indoor_data[-1][1], best_position[0], best_position[1])
+        device_state = pd.DataFrame([device_state])
+        print(device_state)
+
+        if 'dehumidifier' in self.device: # 未持有除濕機時不運算
+              pass
+        else:
+            device_state.loc[device_state.index[0], 'dehumidifier'] = 0  # 除濕機開關
+            device_state.loc[device_state.index[0], 'dehumidifier_hum'] = 0  # 除濕機設定濕度 40-70%
+        
+        if 'fan' in self.device: # 未持有電扇時不運算
+            pass
+        else: device_state.loc[device_state.index[0], 'fan_state'] = 0
+        
         energy_consumption = self.calculate_power(device_state['dehumidifier_hum'][0], indoor_data[-1][1],
                                                   device_state['dehumidifier'][0],device_state['fan_state'][0], device_state['ac_temp'][0], indoor_data[-1][0], 
                                                   device_state['ac_mode'][0], device_state['ac_fan'][0])
         new_indoor_data = self.change(device_state, indoor_data[-1])
-        #print(new_indoor_data)
         pmv = pmv_ppd(tdb=new_indoor_data[0][0], tr=new_indoor_data[0][0], vr=0.25, 
-                      rh=new_indoor_data[0][1], met=1, clo=0.5, limit_inputs=False)        
-        return best_position, best_fitness, fitness_history, device_state, fitness_history, energy_consumption, pmv['pmv']
+                      rh=new_indoor_data[0][1], met=1, clo=0.5, limit_inputs=False)
+        print('pmv : ', pmv['pmv'])     
+        return best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
 #%%
 if __name__ == '__main__':
     start = time.time()
-    # 初始化優化器
+    pmv_ul_ll = pd.read_csv('./config/pmv_ul_ll.csv')
+    room_id = 'chin.yc.eric@gmail.com'
+    # 初始化優化器  
     woa = WhaleOptimizationHEMS(
     n_whales=24,
     max_iter=50,
     temp_bounds=(26.0, 33.0),
-    humidity_bounds=(60.0, 85.0)
+    humidity_bounds=(60.0, 85.0),
+    pmv_up = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id]['pmv_ul'],
+    pmv_down = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id]['pmv_ll']
     )
+    feedback_system = UserFeedbackSystem()
 #%%
     Result = pd.DataFrame()
     fit = []
     Fitness_history = []
     history_indoor, Cost, Pmv = [], [], []
+    trees = woa.decision_tree_train()
     # 執行優化
-    for i in range(8):
+    for i in range(7):
         if i == 0:
             indoor_data = woa.initialize_population()
-            indoor_data[-1][0], indoor_data[-1][1] = 30, 70
-            #outdoor_data[-1][0], outdoor_data[-1][1] = 35, 80
+            indoor_data[-1][0], indoor_data[-1][1] = 30,80
         else:
             indoor_data = np.delete(indoor_data, 0, 0)
-            #outdoor_data = np.delete(outdoor_data, 0, 0)
         history_indoor.append(indoor_data)
-        #history_outdoor.append(outdoor_data)
-        best_position, best_fitness, fitness_history, device_state, fitness_history, cost, pmv = woa.optimize(indoor_data)
+        best_position, best_fitness, fitness_history, device_state, fitness_history, cost, pmv, new_indoor_data = woa.optimize(indoor_data, trees)
         Pmv.append(pmv)
         Cost.append(cost)
         env = pd.DataFrame(indoor_data[-1]).T
@@ -380,11 +413,31 @@ if __name__ == '__main__':
         best_position.columns = ['best_temp', 'best_humd']
         result = pd.concat([env, best_position, device_state], axis=1)
         Result = Result.append(result, ignore_index=True)
+        
+        #user feedback
+        system_name = room_id
+        env_state = {
+            'current_temp' : float(indoor_data[-1][0]),
+            'current_humidity' : float(indoor_data[-1][1])
+        }
+        system_state = device_state.iloc[0].to_dict()
+        user_state = {
+            'dehumidifier': 1,
+            'dehumidifier_hum': 60,
+            'ac_temp': 26,
+            'ac_fan': 1,
+            'ac_mode': 0,
+            'fan_state': 1
+        }
+        # 記錄回饋（如果有不同）
+        feedback_system.record_feedback(system_name, env_state, system_state, user_state)
+        # 預測使用者偏好（之後可使用）
+        predicted = feedback_system.predict_user_preference(current_temp=env_state['current_temp'], current_humidity=env_state['current_humidity'])
+        print("預測使用者偏好：", predicted)
+
         #%%
         # 更新室內外環境狀態
-        new_indoor_data = woa.change(device_state, indoor_data[-1])
         indoor_data = np.append(indoor_data, new_indoor_data, 0)
-        #outdoor_data = np.append(outdoor_data, new_outdoor_data, 0)
     
     # 處理結果數據
     Pmv = pd.DataFrame(Pmv, columns=['pmv'])
@@ -394,15 +447,14 @@ if __name__ == '__main__':
     Result['dehumidifier_hum']  = Result['dehumidifier_hum'].astype(int)
     Result['dehumidifier_hum'] = round(Result['dehumidifier_hum'] / 5) * 5
     Result['dehumidifier_hum'] = np.where(Result['dehumidifier'] == 0, '-', Result['dehumidifier_hum'])
-    Result.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/WOA_ANFIS能耗與舒適度加權平衡參數測試結果.csv')
     end = time.time()
     print(end-start)
-    #%%
     # 讀取比較數據
-    data = pd.read_csv('C:/Users/hankli/Documents/114計劃相關/測試數據/nilm_data_ritaluetb_hour.csv')
+    data = pd.read_csv('C:/Users/S25022/Desktop/aid/測試數據/nilm_data_ritaluetb_hour.csv')
     data = data.iloc[14:21, :]
     ec = sum(data['w_4'])/60000
-    
     # 計算節能效果
-    print(sum(Cost)/1000, ec)
-    print((1-((sum(Cost)/1000)/ec))*100)
+    Result['sum_cost'] = sum(Cost)/1000
+    Result['ec'] = ec
+    Result['energy_saving_rate'] = (1-((sum(Cost)/1000)/ec))*100
+    Result.to_csv('./WOA_TREE能耗與舒適度加權平衡參數測試結果.csv')
