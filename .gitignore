@@ -1,0 +1,13 @@
+#config
+config/
+!config/紅外線遙控器冷氣調控指令集.csv
+!config/紅外線遙控器冷氣調控指令集_woa.csv
+
+#data
+data/
+
+#log
+log/
+
+#db_utility.py
+db_utility.py
