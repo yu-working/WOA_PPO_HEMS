@@ -9,5 +9,8 @@ data/
 #log
 log/
 
+#user feedback log
+user_feedback_log.csv
+
 #db_utility.py
 db_utility.py
