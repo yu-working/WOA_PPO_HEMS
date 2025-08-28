@@ -12,6 +12,8 @@ import logging
 import sys
 import uuid
 import os
+from UserFeedbackSystem import UserFeedbackSystem
+
 start = time.time()
 #%% 能耗計算
 def calculate_power(dehumidifier_humidity, indoor_humidity,
@@ -46,7 +48,7 @@ def calculate_power(dehumidifier_humidity, indoor_humidity,
 #%% IoT數據讀取 (DB連線)
 def pmv_balance(data):
     try:
-        data = pd.read_csv('./測試數據/data-1743586080241.csv') #sample檔
+        data = pd.read_csv('./data/data-1743586080241.csv') #sample檔
         #%% log檔製做
         logging.basicConfig(
             filename='./log/main_decision_pmv_balance_'+dtime.datetime.now().strftime('%Y-%m-%d %H%M%S')+'.log',
@@ -177,6 +179,10 @@ def pmv_balance(data):
             pmv_down = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id[0][0]]['pmv_ll'])
         agent = PPOAgent(state_dim=2, action_dim=4)
         agent.load_model(room_id=room_id[0][0])
+        # DecisionTree訓練
+        trees = woa.decision_tree_train()
+        # 使用者偏好回饋系統
+        feedback_system = UserFeedbackSystem()
         isa = pd.read_csv('./config/紅外線遙控器冷氣調控指令集.csv')
         #%% 環境初始數據
         #indoor_data = woa.initialize_population() #內建環境溫濕度生成
@@ -193,7 +199,8 @@ def pmv_balance(data):
         # 當決策預估節省能耗<14% 時則重複執行
         while (Cost_woa/1000) < cost_init or (Cost_ppo/1000) < cost_init or (Cost_ppo == 0 and Cost_woa == 0):
             Result_woa = pd.DataFrame()
-            best_position, best_fitness, fitness_history, device_state, fitness_history, cost_woa, pmv_woa = woa.optimize(indoor_data)
+            #best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
+            best_position, best_fitness, fitness_history, device_state, cost_woa, pmv_woa, _ = woa.optimize(indoor_data, trees)
             Cost_woa+=cost_woa
             env = pd.DataFrame(indoor_data[-1]).T
             env.columns = ['env_temp', 'env_humd']
@@ -261,17 +268,38 @@ def pmv_balance(data):
             else: 
                 Result = Result_woa
                 alg = 'woa'
+        
+        #使用者偏好
+        current_state = {
+            'current_temp' : Result.iloc[0, 0],
+            'current_humidity': Result.iloc[0, 1]
+        }
+        system_state = Result[['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state']].iloc[0].to_dict()
+        user_state = {
+            'dehumidifier': 1,
+            'dehumidifier_hum': 60,
+            'ac_temp': 26,
+            'ac_fan': 1,
+            'ac_mode': 0,
+            'fan_state': 1
+        }
+        feedback_system.record_feedback(room_id[0][0], current_state, system_state, user_state)
+        # 預測使用者偏好（之後可使用）
+        predicted = feedback_system.predict_user_preference(current_state['current_temp'], current_state['current_humidity'])
+
         #%% 數值轉換
         logger.info('Phase6: 數值轉換')
-        Result['dehumidifier'] = np.where(Result['dehumidifier'] == 0, 'off', Result['dehumidifier'])
-        Result['dehumidifier'] = np.where(Result['dehumidifier'] == 1, 'on', Result['dehumidifier'])
-        Result['fan_state'] = np.where(Result['fan_state'] == 0, 'off', Result['fan_state'])
-        Result['fan_state'] = np.where(Result['fan_state'] == 1, 'on', Result['fan_state'])
-        Result['ac_mode'] = np.where(Result['ac_mode'] == 1, 'cool', Result['ac_mode'])
-        Result['ac_mode'] = np.where(Result['ac_mode'] == 0, 'fan', Result['ac_mode'])
-        Result['ac_fan'] = np.where(Result['ac_fan'] == 0, 'low', Result['ac_fan'])
-        Result['ac_fan'] = np.where(Result['ac_fan'] == 1, 'high', Result['ac_fan'])
-        Result['ac_fan'] = np.where(Result['ac_fan'] == 2, 'auto', Result['ac_fan'])
+        Result['dehumidifier'] = np.where((Result['dehumidifier'] == 0) | (Result['dehumidifier'] == '0'), 'off', Result['dehumidifier'])
+        Result['dehumidifier'] = np.where((Result['dehumidifier'] == 1) | (Result['dehumidifier'] == '1'), 'on', Result['dehumidifier'])
+        Result['fan_state'] = np.where((Result['fan_state'] == 0) | (Result['fan_state'] == '0'), 'off', Result['fan_state'])
+        Result['fan_state'] = np.where((Result['fan_state'] == 1) | (Result['fan_state'] == '1'), 'on', Result['fan_state'])
+        Result['ac_mode'] = np.where((Result['ac_mode'] == 1) | (Result['ac_mode'] == '1'), 'cool', Result['ac_mode'])
+        Result['ac_mode'] = np.where((Result['ac_mode'] == 0) | (Result['ac_mode'] == '0'), 'fan', Result['ac_mode'])
+        Result['ac_fan'] = np.where((Result['ac_fan'] == 0) | (Result['ac_fan'] == '0'), 'low', Result['ac_fan'])
+        Result['ac_fan'] = np.where((Result['ac_fan'] == 1) | (Result['ac_fan'] == '1'), 'high', Result['ac_fan'])
+        Result['ac_fan'] = np.where((Result['ac_fan'] == 2) | (Result['ac_fan'] == '2'), 'auto', Result['ac_fan'])
+        
+        
         try:
             Result['ac_temp'] = np.where(Result['ac_temp'] == '-', '0', Result['ac_temp'])
         except: pass
@@ -279,6 +307,17 @@ def pmv_balance(data):
             Result = Result.drop(['env_temp', 'env_humd', 'best_temp', 'best_humd'], axis=1)
         except:
             Result = Result.drop(['env_temp', 'env_humd'], axis=1)
+
+        # 使用者偏好數值轉換    
+        predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('0', 'off')
+        predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('1', 'on')
+        predicted['fan_state'] = str(predicted['fan_state']).replace('0', 'off')
+        predicted['fan_state'] = str(predicted['fan_state']).replace('1', 'on')
+        predicted['ac_mode'] = str(predicted['ac_mode']).replace('1', 'cool')
+        predicted['ac_mode'] = str(predicted['ac_mode']).replace('0', 'fan')
+        predicted['ac_fan'] = str(predicted['ac_fan']).replace('0', 'low')
+        predicted['ac_fan'] = str(predicted['ac_fan']).replace('1', 'high')
+        predicted['ac_fan'] = str(predicted['ac_fan']).replace('2', 'auto')
         Result['StatusCode'] = 200
         #%% 決策insert到DB -- 此段現階段設計不使用
         # 決策整理成插入格式
@@ -310,7 +349,7 @@ def pmv_balance(data):
         db_conn.DB_disconnect()
     ''' 
         logging.info('run end')
-        return Result
+        return Result, predicted
     #%% 例外紀錄
     except Exception as e:
         logging.error("錯誤類型：%s" % Exception)
