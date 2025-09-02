@@ -7,6 +7,7 @@ import time
 from pythermalcomfort.models import pmv_ppd
 import math
 from UserFeedbackSystem import UserFeedbackSystem
+
 #%%
 class WhaleOptimizationHEMS:
     def __init__(
@@ -46,31 +47,7 @@ class WhaleOptimizationHEMS:
     def decision_tree_train(self):
         # 範例訓練資料 (features: 現在溫度、現在濕度、目標溫度、目標濕度)
         # target: [除濕機啟閉, 除濕機濕度, 冷氣溫度, 冷氣風扇, 冷氣模式, 電風扇啟閉]
-        data = [
-            [30, 80, 27, 60, 1, 60, 27, 1, 1, 1],  # 範例: 太熱太潮 -> 除濕 + 冷氣 + 電風扇
-            [25, 70, 27, 60, 1, 60, 27, 1, 1, 1], # 範例: 接近目標 -> 最小調整
-            [28, 65, 26, 67, 0, 0, 26, 1, 1, 1], # 範例: 溫度高 -> 冷氣+風扇
-            [24, 80, 27, 60, 1, 60, 27, 2, 0, 0], # 範例: 濕度高 -> 除濕+冷氣
-            [28, 40, 26, 68, 0, 0, 26, 1, 1, 1], # 範例: 濕度低 -> dehumi_on = 0 hum = 0
-            [22, 40, 26, 65, 0, 0, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on,
-            [28, 67, 27, 60, 1, 60, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [27, 60, 26.5, 73, 0, 0, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [26, 60, 26.5, 73, 0, 0, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [27, 80, 26.5, 73, 1, 70, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [26, 80, 26.5, 73, 1, 70, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [27.2, 80, 26.8, 73, 1, 70, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [26.7, 67, 26.5, 65, 1, 65, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [26.9, 65, 26.5, 67, 0, 0, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [27.1, 60, 26.8, 60, 0, 0, 26, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-            [26.4, 65, 26.7, 65, 0, 0, 27, 0, 1, 1], # 範例: 溫度低 -> ac_fan = 0 fan_on
-        ]
-
-        columns = ['current_temp', 'current_humidity', 'target_temp', 'target_humidity', 
-                'dehumidifier', 'dehumidifier_hum',
-                'ac_temp', 'ac_fan', 'ac_mode', 'fan_state']
-
-        df = pd.DataFrame(data, columns=columns)
-
+        df = pd.read_csv('./data/balance_decision_tree_data.csv')
         # 特徵與目標
         X = df[['current_temp', 'current_humidity', 'target_temp', 'target_humidity']]
         y = df[['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state']]
@@ -95,6 +72,8 @@ class WhaleOptimizationHEMS:
             output[col] = int(tree.predict(input_data)[0])
         if int(output['dehumidifier'] == 1) & int(output['dehumidifier_hum'] == 0):
             output['dehumidifier'] = 0
+        if int(output['ac_mode'] == 0):
+            output['ac_temp'] = 0
 
         return output
             
@@ -124,9 +103,8 @@ class WhaleOptimizationHEMS:
         dehumidifier_power = 120  # 除濕機功率
         fan_power = 60            # 電扇功率
         ac_base_power = 1350      # 冷氣基礎功率
-        #ac_fan_speed_coeff = 0.1  # 冷氣風速功率係數
         ac_mode_weight = {0:0.5, 1:1, 2:0.9}        # 冷氣運轉模式係數 0:送風 1:冷氣 2:舒眠
-        ac_fan_weight = {0:0.6, 1:1, 2:0.8} # 風速係數 0:低速 1:高速 2:自動
+        ac_fan_weight = {0:0.9, 1:1, 2:0.95} # 風速係數 0:低速 1:高速 2:自動
         
 
         # 計算除濕機功耗
@@ -138,7 +116,7 @@ class WhaleOptimizationHEMS:
         # 計算冷氣功耗
         if ac_mode_weight == 1:
             ac_consumption = ac_base_power * ac_mode_weight[ac_mode] * (1 + 0.1 * max(0, indoor_temp-ac_temperature)) * ac_fan_weight[ac_fan_speed] 
-        else: 
+        else:
             ac_consumption = ac_base_power * ac_mode_weight[ac_mode] * ac_fan_weight[ac_fan_speed] 
 
         return dehumidifier_consumption + fan_consumption + ac_consumption
@@ -157,10 +135,10 @@ class WhaleOptimizationHEMS:
             適應度值(越低越好)
         """
         # 舒適度參數(理想值)
-        ideal_temp_high = 28.0
+        ideal_temp_high = 30.0
         ideal_humidity_high = 60.0
-        ideal_temp_low = 26.0
-        ideal_humidity_low = 50.0
+        ideal_temp_low = 24.0
+        ideal_humidity_low = 40.0
         
         # 計算濕度權重
         if humidity < ideal_humidity_low:
@@ -200,8 +178,8 @@ class WhaleOptimizationHEMS:
         
         # 預測設備狀態
         
-        device_state = self.predict_control(trees, temp, humidity, temp, humidity)
-        device_state = pd.DataFrame(device_state, columns=['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state'], index=[0])
+        #device_state = self.predict_control(trees, temp, humidity, temp, humidity)
+        #device_state = pd.DataFrame(device_state, columns=['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state'], index=[0])
         
         if 'dehumidifier' in self.device: # 未持有除濕機時不運算
               pass
@@ -210,18 +188,38 @@ class WhaleOptimizationHEMS:
             device_state.loc[device_state.index[0], 'dehumidifier_hum'] = 0  # 除濕機設定濕度 40-70%
         
         # 計算濕度變化的潛熱
-        m = ((217*(humidity/100)*6.112*math.exp(17.62*temp/(temp+243.12)))/(temp+273.15)-(217*(device_state.iloc[0, 1]/100)*6.112*math.exp(17.62*temp/(temp+243.12))))
+        #m = ((217*(humidity/100)*6.112*math.exp(17.62*temp/(temp+243.12)))/(temp+273.15)-(217*(device_state.iloc[0, 1]/100)*6.112*math.exp(17.62*temp/(temp+243.12))))
         
         # 計算PMV值
         pmv = pmv_ppd(tdb=temp, tr=temp, vr=0.25, 
                       rh=humidity, met=1, clo=0.5, limit_inputs=False)
         # PMV值超出舒適範圍時給予懲罰
-        if float(self.pmv_down) < pmv['pmv'] < float(self.pmv_up) and abs(pmv['pmv']) != 0:
+        '''
+        if float(self.pmv_down) <= pmv['pmv'] <= float(self.pmv_up):
             pass
-        else: pmv['pmv'] = 1000 # 較大的懲罰
+        else: pmv['pmv'] = 10 # 較大的懲罰
+        '''
+        # 嘗試靠近使用者舒適區間上界
+        
+        try:
+            if abs(float(self.pmv_up) - pmv['pmv']) < abs(float(self.pmv_up) - tpmv):
+                tpmv = pmv['pmv']
+                user_pmv = abs(float(self.pmv_up) - pmv['pmv'])
+                pass
+            else: user_pmv = 100000 # 較大的懲罰
+        except:
+            tpmv = 3
+            if abs(float(self.pmv_up) - pmv['pmv']) < abs(float(self.pmv_up) - tpmv):
+                tpmv = pmv['pmv']
+                user_pmv = abs(float(self.pmv_up) - pmv['pmv'])
+                pass
+            else: user_pmv = 100000 # 較大的懲罰
         
         # 計算最終適應度值
-        fitness = abs((temp_deviation*1.005*w_temp+humidity_deviation*(m)*2260*w_humidity)) * abs(pmv['pmv'])
+        #fitness = abs((temp_deviation*1.005*w_temp+humidity_deviation*(m)*2260*w_humidity)) * abs(pmv['pmv']) * user_pmv
+        #fitness = abs((temp_deviation*1.005*w_temp+humidity_deviation*(m)*2260*w_humidity)) * user_pmv
+        #fitness = abs(pmv['pmv']) # 配合使用者pmv上界 嘗試靠近使用者舒適區間上界
+        fitness = user_pmv # 配合使用者pmv上界 嘗試靠近使用者舒適區間上界
         return fitness
     
     def apply_bounds(self, position: np.ndarray) -> np.ndarray:
@@ -240,30 +238,39 @@ class WhaleOptimizationHEMS:
     
     def change(self, device_date, indoor_data):
         """模擬室內環境變化"""
-        #co2 = indoor_data[2]
-        # 溫濕度變化模型
-        temp_change = 0
-        humidity_change = 0
-        target_humidity = 40
-        
-        # 除濕機影響
-        if device_date.iloc[0, 0] == 1:
-            target_humidity = device_date['dehumidifier_hum'].iloc[0]
-            humidity_change = -7.1 * 0.9
-    
-        # 冷氣影響
-        temp_diff = indoor_data[0] - device_date.iloc[0, 2]
-        cooling_rate = 0.7 if device_date.iloc[0, 4] == 1 else 0
-        temp_change = -cooling_rate * temp_diff
-        
-        # 風扇影響
-        if device_date.iloc[0, 5] == 1:
-            temp_change += 0.005 * indoor_data[0]
-        
+        target_humidity = device_date['dehumidifier_hum'].iloc[0]
+        target_temp = device_date['ac_temp'].iloc[0]
+
+        '''新公式(參考自chatgpt)
+        ## 溫度
+        base_area = 25 #參考面積 25 m^2
+        cooling_per_kW = 2 # 設每kW每小時降溫 2
+        area = 20 # 暫定空間面積為20 m^2
+        cooling_capacity = 2.8 # 暫定冷氣能力為 2.8 kW
+        area_factor = base_area / area
+        temp_drop = cooling_capacity * cooling_per_kW * area_factor
+        temp_final = max(self.indoor_temp - temp_drop, target_temp)
+        ## 濕度
+        humidity_drop = min((cooling_capacity / area) * 100, 30)
+        rh_final = max(self.indoor_humidity - humidity_drop, target_humidity)
+        '''
+
+        base_area = 25 #參考面積 25 m^2
+        cooling_per_kW = 2 # 設每kW每小時降溫 2
+        area = 20 # 暫定空間面積為20 m^2
+        cooling_capacity = 2.8 if device_date['ac_mode'].iloc[0] == 1 else 0 # 暫定冷氣能力 如果為冷氣模式為 2.8 kW 送風模式為 0 
+        area_factor = base_area / area
+        ac_temp_drop = cooling_capacity * cooling_per_kW * area_factor
+        temp_final = max(indoor_data[0] - ac_temp_drop, target_temp) if device_date['ac_mode'].iloc[0] == 1 \
+        else min(indoor_data[0] + 2, 35)
+        ## 濕度
+        ac_humidity_drop = min((cooling_capacity / area) * 100, 30)
+        dehumidifier_humidity_drop = 7.1 * 0.9 if device_date['dehumidifier'].iloc[0] == 1 else 0
+        rh_final = max(indoor_data[1] - ac_humidity_drop - dehumidifier_humidity_drop, target_humidity) if target_humidity > 45 \
+        else max(indoor_data[1] - ac_humidity_drop - dehumidifier_humidity_drop, 45)
+
         # 更新室內狀態
-        indoor_temp = np.clip(indoor_data[0] + temp_change, 20, 35)
-        indoor_humidity = np.clip(indoor_data[1] + humidity_change, target_humidity, 85)
-        new_indoor_data = np.array([indoor_temp, indoor_humidity]).reshape(1, 2)
+        new_indoor_data = np.array([temp_final, rh_final]).reshape(1, 2)
         return new_indoor_data
     
     def optimize(self, indoor_data, trees) -> Tuple[np.ndarray, float, List[float]]:
@@ -277,7 +284,7 @@ class WhaleOptimizationHEMS:
         """
         # 初始化群體
         population = indoor_data.copy()
-        
+        target = float(self.pmv_up)
         # 初始化最佳解
         fitness_values = np.array([
             self.fitness_function(pos[0], pos[1], trees) 
@@ -374,16 +381,18 @@ class WhaleOptimizationHEMS:
         print('pmv : ', pmv['pmv'])     
         return best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
 #%%
+#sea.han@msa.hinet.net,0.1,-1.83
+#g0707c@gmail.com,1.1230835787923417,-0.2935820895522388
 if __name__ == '__main__':
     start = time.time()
     pmv_ul_ll = pd.read_csv('./config/pmv_ul_ll.csv')
-    room_id = 'chin.yc.eric@gmail.com'
+    room_id = 'g0707c@gmail.com'
     # 初始化優化器  
     woa = WhaleOptimizationHEMS(
     n_whales=24,
     max_iter=50,
-    temp_bounds=(26.0, 33.0),
-    humidity_bounds=(60.0, 85.0),
+    temp_bounds=(26.0, 31.0),
+    humidity_bounds=(40.0, 70.0),
     pmv_up = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id]['pmv_ul'],
     pmv_down = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id]['pmv_ll']
     )
@@ -393,6 +402,7 @@ if __name__ == '__main__':
     fit = []
     Fitness_history = []
     history_indoor, Cost, Pmv = [], [], []
+    Ec, Esr = [], []
     trees = woa.decision_tree_train()
     # 執行優化
     for i in range(7):
@@ -402,9 +412,10 @@ if __name__ == '__main__':
         else:
             indoor_data = np.delete(indoor_data, 0, 0)
         history_indoor.append(indoor_data)
-        best_position, best_fitness, fitness_history, device_state, fitness_history, cost, pmv, new_indoor_data = woa.optimize(indoor_data, trees)
+        best_position, best_fitness, fitness_history, device_state, cost, pmv, new_indoor_data = woa.optimize(indoor_data, trees)
+        print(best_position)
         Pmv.append(pmv)
-        Cost.append(cost)
+        Cost.append(cost/1000)
         env = pd.DataFrame(indoor_data[-1]).T
         env.columns = ['env_temp', 'env_humd']
         fit.append(best_fitness)
@@ -414,6 +425,12 @@ if __name__ == '__main__':
         result = pd.concat([env, best_position, device_state], axis=1)
         Result = Result.append(result, ignore_index=True)
         
+        # 比較節能效果
+        ec = woa.calculate_power(40, Result['env_humd'].iloc[-1], 1, 1, 26, Result['env_temp'].iloc[-1], 1, 1)
+        Ec.append(ec/1000)
+        esr = (1-(cost/ec))*100
+        Esr.append(esr)
+
         #user feedback
         system_name = room_id
         env_state = {
@@ -449,12 +466,9 @@ if __name__ == '__main__':
     Result['dehumidifier_hum'] = np.where(Result['dehumidifier'] == 0, '-', Result['dehumidifier_hum'])
     end = time.time()
     print(end-start)
-    # 讀取比較數據
-    data = pd.read_csv('C:/Users/S25022/Desktop/aid/測試數據/nilm_data_ritaluetb_hour.csv')
-    data = data.iloc[14:21, :]
-    ec = sum(data['w_4'])/60000
+
     # 計算節能效果
-    Result['sum_cost'] = sum(Cost)/1000
-    Result['ec'] = ec
-    Result['energy_saving_rate'] = (1-((sum(Cost)/1000)/ec))*100
+    Result['cost'] = Cost
+    Result['ec'] = Ec
+    Result['energy_saving_rate'] = Esr
     Result.to_csv('./WOA_TREE能耗與舒適度加權平衡參數測試結果.csv')

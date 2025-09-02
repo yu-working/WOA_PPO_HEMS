@@ -55,7 +55,7 @@ class HEMSEnvironment:
         fan_power = 60            # 電扇功率
         ac_base_power = 1350      # 冷氣基礎功率
         ac_mode_weight = {0:0.5, 1:1, 2:0.9}        # 冷氣運轉模式係數 0:送風 1:冷氣 2:舒眠
-        ac_fan_weight = {0:0.6, 1:1, 2:0.8} # 風速係數 0:低速 1:高速 2:自動
+        ac_fan_weight = {0:0.9, 1:1, 2:0.95} # 風速係數 0:低速 1:高速 2:自動
 
         # 計算除濕機功耗
         dehumidifier_consumption = dehumidifier_power * max(0, (self.indoor_humidity - dehumidifier_humidity)/100) if dehumidifier_on else 0
@@ -98,6 +98,7 @@ class HEMSEnvironment:
                                                   ac_command['ac_mode'], ac_command['ac_fan'])
         
         # 溫濕度變化模型
+        '''
         temp_change = 0
         humidity_change = 0
         
@@ -113,9 +114,6 @@ class HEMSEnvironment:
         else:
             cooling_rate = 0
             temp_diff = 0
-            
-        # 外部環境影響
-        #outdoor_influence = self.indoor_temp * 0.1
         
         temp_change = -cooling_rate * temp_diff
         
@@ -123,11 +121,29 @@ class HEMSEnvironment:
         if fan_on:
             # 風扇會加速溫度趨近外部溫度
             temp_change += 0.005 * self.indoor_temp
-        
+        '''
+        # 新公式應用
+        base_area = 25 #參考面積 25 m^2
+        cooling_per_kW = 2 # 設每kW每小時降溫 2
+        area = 20 # 暫定空間面積為20 m^2
+        cooling_capacity = 2.8 if ac_command['ac_mode'] == 1 else 0 # 暫定冷氣能力 如果為冷氣模式為 2.8 kW 送風模式為 0 
+        area_factor = base_area / area
+        ac_temp_drop = cooling_capacity * cooling_per_kW * area_factor
+        temp_final = max(self.indoor_temp - ac_temp_drop, ac_command['ac_temp']) if ac_command['ac_mode'] == 1 \
+        else min(self.indoor_temp + 2, 35)
+        ## 濕度
+        ac_humidity_drop = min((cooling_capacity / area) * 100, 30)
+        dehumidifier_humidity_drop = 7.1 * 0.9 if dehumidifier_on == 1 else 0
+        rh_final = max(self.indoor_humidity - ac_humidity_drop - dehumidifier_humidity_drop, dehumidifier_humidity) if dehumidifier_humidity > 45 \
+        else max(self.indoor_humidity - ac_humidity_drop - dehumidifier_humidity_drop, 45)
+
+
         # 更新狀態
-        self.indoor_temp = np.clip(self.indoor_temp + temp_change, 20, 35)
-        self.indoor_humidity = np.clip(self.indoor_humidity + humidity_change, 40, 85)
-        
+        #self.indoor_temp = np.clip(self.indoor_temp + temp_change, 20, 35)
+        #self.indoor_humidity = np.clip(self.indoor_humidity + humidity_change, 40, 85)
+        self.indoor_temp = temp_final
+        self.indoor_humidity = rh_final
+
         # 計算PMV舒適度指標
         pmv = pmv_ppd(tdb=self.indoor_temp, tr=self.indoor_temp, vr=0.25, 
                       rh=self.indoor_humidity, met=1, clo=0.5, limit_inputs=False)
