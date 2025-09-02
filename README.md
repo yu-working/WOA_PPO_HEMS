@@ -74,7 +74,7 @@ WOA_PPO_HEMS/
 │   └─ ppo_pmv_balance_{room_id}.pt      # PPO模型存檔
 ├─ data/
 │   ├─ data-1743586080241.csv           # 測試用 sample 檔
-│   └─ nilm_data_ritaluetb_hour.csv     # 歷史用電數據
+│   └─ balance_decision_tree_data.csv     # 決策樹建樹資料
 └─ log/
     └─ main_decision_pmv_balance_{datetime}.log    # 執行log檔
 ```
