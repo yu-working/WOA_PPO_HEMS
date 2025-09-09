@@ -381,12 +381,10 @@ class WhaleOptimizationHEMS:
         print('pmv : ', pmv['pmv'])     
         return best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
 #%%
-#sea.han@msa.hinet.net,0.1,-1.83
-#g0707c@gmail.com,1.1230835787923417,-0.2935820895522388
 if __name__ == '__main__':
     start = time.time()
     pmv_ul_ll = pd.read_csv('./config/pmv_ul_ll.csv')
-    room_id = 'g0707c@gmail.com'
+    room_id = '123gmail.com'
     # 初始化優化器  
     woa = WhaleOptimizationHEMS(
     n_whales=24,
