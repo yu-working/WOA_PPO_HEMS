@@ -197,7 +197,9 @@ def pmv_balance(data):
         logger.info('Phase5: 決策計算')
         # 執行優化
         # 當決策預估節省能耗<14% 時則重複執行
+        count = 0
         while (Cost_woa/1000) < cost_init or (Cost_ppo/1000) < cost_init or (Cost_ppo == 0 and Cost_woa == 0):
+            count += 1
             Result_woa = pd.DataFrame()
             #best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
             best_position, best_fitness, fitness_history, device_state, cost_woa, pmv_woa, _ = woa.optimize(indoor_data, trees)
@@ -248,6 +250,8 @@ def pmv_balance(data):
              #   and (Result_ppo['pmv'][0] < 1 or Result_woa['pmv'][0] < 1) :
             if (Cost_woa/1000) < cost_init or (Cost_ppo/1000) < cost_init \
                  and (Result_ppo['pmv'][0] < 1 or Result_woa['pmv'][0] < 1) :
+                break
+            elif count == 4:
                 break
             else:
                 Cost_woa = 0
