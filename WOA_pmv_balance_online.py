@@ -194,25 +194,21 @@ class WhaleOptimizationHEMS:
         pmv = pmv_ppd(tdb=temp, tr=temp, vr=0.25, 
                       rh=humidity, met=1, clo=0.5, limit_inputs=False)
         # PMV值超出舒適範圍時給予懲罰
-        '''
+        
         if float(self.pmv_down) <= pmv['pmv'] <= float(self.pmv_up):
             pass
-        else: pmv['pmv'] = 10 # 較大的懲罰
-        '''
-        # 嘗試靠近使用者舒適區間上界
+        else: pmv['pmv'] = 100000 # 較大的懲罰
         
         try:
-            if abs(float(self.pmv_up) - pmv['pmv']) < abs(float(self.pmv_up) - tpmv):
+            if abs(abs(float(self.pmv_up)) - abs(pmv['pmv'])) < abs(abs(float(self.pmv_up)) - abs(tpmv)):
                 tpmv = pmv['pmv']
-                user_pmv = abs(float(self.pmv_up) - pmv['pmv'])
-                pass
+                user_pmv = abs(abs(float(self.pmv_up)) - abs(pmv['pmv']))
             else: user_pmv = 100000 # 較大的懲罰
         except:
             tpmv = 3
-            if abs(float(self.pmv_up) - pmv['pmv']) < abs(float(self.pmv_up) - tpmv):
+            if abs(abs(float(self.pmv_up)) - abs(pmv['pmv'])) < abs(abs(float(self.pmv_up)) - abs(tpmv)):
                 tpmv = pmv['pmv']
-                user_pmv = abs(float(self.pmv_up) - pmv['pmv'])
-                pass
+                user_pmv = abs(float(self.pmv_up) - abs(pmv['pmv']))
             else: user_pmv = 100000 # 較大的懲罰
         
         # 計算最終適應度值
@@ -240,21 +236,6 @@ class WhaleOptimizationHEMS:
         """模擬室內環境變化"""
         target_humidity = device_date['dehumidifier_hum'].iloc[0]
         target_temp = device_date['ac_temp'].iloc[0]
-
-        '''新公式(參考自chatgpt)
-        ## 溫度
-        base_area = 25 #參考面積 25 m^2
-        cooling_per_kW = 2 # 設每kW每小時降溫 2
-        area = 20 # 暫定空間面積為20 m^2
-        cooling_capacity = 2.8 # 暫定冷氣能力為 2.8 kW
-        area_factor = base_area / area
-        temp_drop = cooling_capacity * cooling_per_kW * area_factor
-        temp_final = max(self.indoor_temp - temp_drop, target_temp)
-        ## 濕度
-        humidity_drop = min((cooling_capacity / area) * 100, 30)
-        rh_final = max(self.indoor_humidity - humidity_drop, target_humidity)
-        '''
-
         base_area = 25 #參考面積 25 m^2
         cooling_per_kW = 2 # 設每kW每小時降溫 2
         area = 20 # 暫定空間面積為20 m^2
@@ -266,7 +247,7 @@ class WhaleOptimizationHEMS:
         ## 濕度
         ac_humidity_drop = min((cooling_capacity / area) * 100, 30)
         dehumidifier_humidity_drop = 7.1 * 0.9 if device_date['dehumidifier'].iloc[0] == 1 else 0
-        rh_final = max(indoor_data[1] - ac_humidity_drop - dehumidifier_humidity_drop, target_humidity) if target_humidity > 45 \
+        rh_final = max(indoor_data[1] - ac_humidity_drop - dehumidifier_humidity_drop, target_humidity) if device_date['dehumidifier'].iloc[0] == 1 \
         else max(indoor_data[1] - ac_humidity_drop - dehumidifier_humidity_drop, 45)
 
         # 更新室內狀態
@@ -284,7 +265,6 @@ class WhaleOptimizationHEMS:
         """
         # 初始化群體
         population = indoor_data.copy()
-        target = float(self.pmv_up)
         # 初始化最佳解
         fitness_values = np.array([
             self.fitness_function(pos[0], pos[1], trees) 
@@ -347,7 +327,7 @@ class WhaleOptimizationHEMS:
             
             fitness_history.append(best_fitness)
             
-        # 根據室內溫度變化決定使用哪個位置進行預測
+        # 根據pmv變化決定使用哪個位置進行預測
         
         indoor_pmv = pmv_ppd(tdb=indoor_data[-1][0], tr=indoor_data[-1][0], vr=0.25, 
                       rh=indoor_data[-1][1], met=1, clo=0.5, limit_inputs=False)
@@ -355,12 +335,11 @@ class WhaleOptimizationHEMS:
         best_pmv = pmv_ppd(tdb=best_position[0], tr=best_position[0], vr=0.25, 
                       rh=best_position[1], met=1, clo=0.5, limit_inputs=False)
         #插入Decision Tree
-        if abs(indoor_pmv['pmv']) < abs(best_pmv['pmv']):
+        if abs(self.pmv_up.values[0] - indoor_pmv['pmv']) < abs(self.pmv_up.values[0] - best_pmv['pmv']):
             device_state = self.predict_control(trees, indoor_data[-1][0], indoor_data[-1][1], indoor_data[-1][0], indoor_data[-1][1])
         else:
             device_state = self.predict_control(trees, indoor_data[-1][0], indoor_data[-1][1], best_position[0], best_position[1])
         device_state = pd.DataFrame([device_state])
-        print(device_state)
 
         if 'dehumidifier' in self.device: # 未持有除濕機時不運算
               pass
@@ -378,7 +357,7 @@ class WhaleOptimizationHEMS:
         new_indoor_data = self.change(device_state, indoor_data[-1])
         pmv = pmv_ppd(tdb=new_indoor_data[0][0], tr=new_indoor_data[0][0], vr=0.25, 
                       rh=new_indoor_data[0][1], met=1, clo=0.5, limit_inputs=False)
-        print('pmv : ', pmv['pmv'])     
+        
         return best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
 #%%
 if __name__ == '__main__':
@@ -411,7 +390,6 @@ if __name__ == '__main__':
             indoor_data = np.delete(indoor_data, 0, 0)
         history_indoor.append(indoor_data)
         best_position, best_fitness, fitness_history, device_state, cost, pmv, new_indoor_data = woa.optimize(indoor_data, trees)
-        print(best_position)
         Pmv.append(pmv)
         Cost.append(cost/1000)
         env = pd.DataFrame(indoor_data[-1]).T
