@@ -11,7 +11,7 @@ def decision_pmv_balance():
     register = request.get_json()
     #data = pd.read_json(register)
     data = pd.DataFrame([register])
-    decision = pmv_balance(data)
+    decision, predicted = pmv_balance(data)
     #print(decision)
     #運算失敗會回傳400
     if decision['StatusCode'][0] == 200:
