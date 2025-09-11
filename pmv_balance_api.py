@@ -5,8 +5,7 @@ import pandas as pd
 app = Flask(__name__)
 
 
-#@app.route('/decision_pmv_balance', methods=['POST'])
-@app.route('/', methods=['POST'])
+@app.route('/decision_pmv_balance', methods=['POST'])
 def decision_pmv_balance():
     register = request.get_json()
     data = pd.read_json(register)

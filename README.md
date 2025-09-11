@@ -106,7 +106,7 @@ torchvision == 0.17.0
 
 使用`curl`指令來傳送JSON資料至伺服器。以下是JSON內容的範例
 ```
-curl -X POST http://127.0.0.1:5000/ -H "Content-Type: application/json" -d "[{\"room_id\":\"22222222-2222-2222-2222-222222222222\",\"operation_direction\":\"read\",\"source\":\"energyhub\",\"recorded_datetime\":\"2025-04-02 17:27:19\",\"appliance_name\":\"air_conditioner\",\"capability_name\":\"cfg_fan_level\",\"record_value\":\"medium\",\"device_signature\":\"44444444-4444-4444-4444-444444444441\"},...]`
+curl -X POST http://127.0.0.1:5000/decision_pmv_balance -H "Content-Type: application/json" -d "[{\"room_id\":\"22222222-2222-2222-2222-222222222222\",\"operation_direction\":\"read\",\"source\":\"energyhub\",\"recorded_datetime\":\"2025-04-02 17:27:19\",\"appliance_name\":\"air_conditioner\",\"capability_name\":\"cfg_fan_level\",\"record_value\":\"medium\",\"device_signature\":\"44444444-4444-4444-4444-444444444441\"},...]`
 ```
 
 上述範例為呈現簡潔，省略部分JSON物件，請將`...`替換為完整的資料。
