@@ -274,6 +274,7 @@ def pmv_balance(data):
                 alg = 'woa'
         
         #使用者偏好
+        predicted = {}
         current_state = {
             'current_temp' : Result.iloc[0, 0],
             'current_humidity': Result.iloc[0, 1]
@@ -312,16 +313,18 @@ def pmv_balance(data):
         except:
             Result = Result.drop(['env_temp', 'env_humd'], axis=1)
 
-        # 使用者偏好數值轉換    
-        predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('0', 'off')
-        predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('1', 'on')
-        predicted['fan_state'] = str(predicted['fan_state']).replace('0', 'off')
-        predicted['fan_state'] = str(predicted['fan_state']).replace('1', 'on')
-        predicted['ac_mode'] = str(predicted['ac_mode']).replace('1', 'cool')
-        predicted['ac_mode'] = str(predicted['ac_mode']).replace('0', 'fan')
-        predicted['ac_fan'] = str(predicted['ac_fan']).replace('0', 'low')
-        predicted['ac_fan'] = str(predicted['ac_fan']).replace('1', 'high')
-        predicted['ac_fan'] = str(predicted['ac_fan']).replace('2', 'auto')
+        # 使用者偏好數值轉換  
+        try:  
+            predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('0', 'off')
+            predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('1', 'on')
+            predicted['fan_state'] = str(predicted['fan_state']).replace('0', 'off')
+            predicted['fan_state'] = str(predicted['fan_state']).replace('1', 'on')
+            predicted['ac_mode'] = str(predicted['ac_mode']).replace('1', 'cool')
+            predicted['ac_mode'] = str(predicted['ac_mode']).replace('0', 'fan')
+            predicted['ac_fan'] = str(predicted['ac_fan']).replace('0', 'low')
+            predicted['ac_fan'] = str(predicted['ac_fan']).replace('1', 'high')
+            predicted['ac_fan'] = str(predicted['ac_fan']).replace('2', 'auto')
+        except: pass
         Result['StatusCode'] = 200
         #%% 決策insert到DB -- 此段現階段設計不使用
         # 決策整理成插入格式
