@@ -244,10 +244,6 @@ def pmv_balance(data):
             Result_ppo['dehumidifier_hum'] = np.where(Result_ppo['dehumidifier'] == 0, '0', Result_ppo['dehumidifier_hum'])
             #Result_ppo.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/main_ppo能源與舒適度加權參數應用結果.csv')
            # 判斷是否達成節能
-            #print((1-((Cost_woa/1000)/cost_init))*100, (1-((Cost_ppo/1000)/cost_init))*100)
-            #print(Result_ppo['pmv'][0], Result_woa['pmv'][0])
-            #if ((1-((Cost_woa/1000)/cost_init))*100 < cost_init or (1-((Cost_ppo/1000)/cost_init))*100 < cost_init) \
-             #   and (Result_ppo['pmv'][0] < 1 or Result_woa['pmv'][0] < 1) :
             if (Cost_woa/1000) < cost_init or (Cost_ppo/1000) < cost_init \
                  and (Result_ppo['pmv'][0] < 1 or Result_woa['pmv'][0] < 1) :
                 break
@@ -274,7 +270,6 @@ def pmv_balance(data):
                 alg = 'woa'
         
         #使用者偏好
-        predicted = {}
         current_state = {
             'current_temp' : Result.iloc[0, 0],
             'current_humidity': Result.iloc[0, 1]

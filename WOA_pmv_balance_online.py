@@ -199,23 +199,14 @@ class WhaleOptimizationHEMS:
             pass
         else: pmv['pmv'] = 100000 # 較大的懲罰
         
-        try:
-            if abs(abs(float(self.pmv_up)) - abs(pmv['pmv'])) < abs(abs(float(self.pmv_up)) - abs(tpmv)):
-                tpmv = pmv['pmv']
-                user_pmv = abs(abs(float(self.pmv_up)) - abs(pmv['pmv']))
-            else: user_pmv = 100000 # 較大的懲罰
-        except:
-            tpmv = 3
-            if abs(abs(float(self.pmv_up)) - abs(pmv['pmv'])) < abs(abs(float(self.pmv_up)) - abs(tpmv)):
-                tpmv = pmv['pmv']
-                user_pmv = abs(float(self.pmv_up) - abs(pmv['pmv']))
-            else: user_pmv = 100000 # 較大的懲罰
+        fitness = abs(abs(float(self.pmv_up) - abs(pmv['pmv'])))
+
         
         # 計算最終適應度值
         #fitness = abs((temp_deviation*1.005*w_temp+humidity_deviation*(m)*2260*w_humidity)) * abs(pmv['pmv']) * user_pmv
         #fitness = abs((temp_deviation*1.005*w_temp+humidity_deviation*(m)*2260*w_humidity)) * user_pmv
         #fitness = abs(pmv['pmv']) # 配合使用者pmv上界 嘗試靠近使用者舒適區間上界
-        fitness = user_pmv # 配合使用者pmv上界 嘗試靠近使用者舒適區間上界
+        #fitness = user_pmv # 配合使用者pmv上界 嘗試靠近使用者舒適區間上界
         return fitness
     
     def apply_bounds(self, position: np.ndarray) -> np.ndarray:
