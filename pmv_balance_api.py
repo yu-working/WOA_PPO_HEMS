@@ -9,8 +9,7 @@ app = Flask(__name__)
 @app.route('/', methods=['POST'])
 def decision_pmv_balance():
     register = request.get_json()
-    #data = pd.read_json(register)
-    data = pd.DataFrame([register])
+    data = pd.read_json(register)
     decision, predicted = pmv_balance(data)
     #print(decision)
     #運算失敗會回傳400

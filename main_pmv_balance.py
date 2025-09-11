@@ -48,7 +48,7 @@ def calculate_power(dehumidifier_humidity, indoor_humidity,
 #%% IoT數據讀取 (DB連線)
 def pmv_balance(data):
     try:
-        data = pd.read_csv('./data/data-1743586080241.csv') #sample檔
+        #data = pd.read_csv('./data/data-1743586080241.csv') #sample檔
         #%% log檔製做
         logging.basicConfig(
             filename='./log/main_decision_pmv_balance_'+dtime.datetime.now().strftime('%Y-%m-%d %H%M%S')+'.log',
