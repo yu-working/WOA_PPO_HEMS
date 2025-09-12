@@ -1,0 +1,9 @@
+flask
+psycopg2
+pandas
+python-dotenv
+torch
+pythermalcomfort==2.10.0
+scikit-learn
+pymssql
+sshtunnel
