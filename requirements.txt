@@ -7,4 +7,4 @@ pythermalcomfort==2.10.0
 scikit-learn
 pymssql
 sshtunnel
-repuests
+requests
