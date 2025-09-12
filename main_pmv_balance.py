@@ -73,7 +73,7 @@ def calculate_power(
 # %% IoT數據讀取 (DB連線)
 def pmv_balance(data):
     try:
-        data = pd.read_csv("./data/data-1743586080241.csv")  # sample檔
+        # data = pd.read_csv('./data/data-1743586080241.csv') #sample檔
         # %% log檔製做
         logging.basicConfig(
             filename="./log/main_decision_pmv_balance_"
@@ -462,10 +462,6 @@ def pmv_balance(data):
             )
             # Result_ppo.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/main_ppo能源與舒適度加權參數應用結果.csv')
             # 判斷是否達成節能
-            # print((1-((Cost_woa/1000)/cost_init))*100, (1-((Cost_ppo/1000)/cost_init))*100)
-            # print(Result_ppo['pmv'][0], Result_woa['pmv'][0])
-            # if ((1-((Cost_woa/1000)/cost_init))*100 < cost_init or (1-((Cost_ppo/1000)/cost_init))*100 < cost_init) \
-            #   and (Result_ppo['pmv'][0] < 1 or Result_woa['pmv'][0] < 1) :
             if (
                 (Cost_woa / 1000) < cost_init
                 or (Cost_ppo / 1000) < cost_init
@@ -495,7 +491,6 @@ def pmv_balance(data):
                 alg = "woa"
 
         # 使用者偏好
-        predicted = {}
         current_state = {
             "current_temp": Result.iloc[0, 0],
             "current_humidity": Result.iloc[0, 1],
@@ -712,4 +707,5 @@ def pmv_balance(data):
         print("Error Line {}".format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
         # db_conn.DB_disconnect()
         Result = pd.DataFrame([400], columns=["StatusCode"])
-        return Result, {}, pd.DataFrame()
+        predicted = {}
+        return Result, predicted

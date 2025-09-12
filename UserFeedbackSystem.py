@@ -71,4 +71,6 @@ class UserFeedbackSystem:
         prediction = {}
         for target, model in self.model.items():
             prediction[target] = int(model.predict(input_df)[0])
+        if not prediction:
+            prediction = {}
         return prediction
