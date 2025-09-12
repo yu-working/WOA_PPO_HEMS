@@ -13,7 +13,8 @@ app = Flask(__name__)
 @app.route("/decision_pmv_balance", methods=["POST"])
 def decision_pmv_balance():
     register = request.get_json()
-    data = pd.read_json(register)
+
+    data = pd.DataFrame(register)
     decision, predicted, woa_result, total_result = pmv_balance(data)
     # print(decision)
     # 運算失敗會回傳400
@@ -22,8 +23,6 @@ def decision_pmv_balance():
         decision_remark = total_result["decision_remark"][0]
         best_temp = woa_result["best_temp"][0]
         best_humd = woa_result["best_humd"][0]
-        print(total_result.columns)
-        print(woa_result.columns)
         chek_user_questionnaire_status(room_id, decision_remark, best_temp, best_humd)
 
         return jsonify(

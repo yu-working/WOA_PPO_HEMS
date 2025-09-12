@@ -82,13 +82,7 @@ def connect_user_ai_decision_db(users_to_check: list) -> tuple[list, list]:
         )
 
         cur = conn.cursor()
-        cur.execute(
-            f"SELECT pg_database.encoding FROM pg_database WHERE pg_database.datname = '{db_database}'"
-        )
 
-        # 取得結果
-        encoding = cur.fetchone()[0]
-        print(f"你的資料庫 '{db_database}' 的編碼是: {encoding}")
         # SQL: 每個 decision_remark 選最新的一筆紀錄
         query = """
             SELECT DISTINCT ON (decision_remark) 
