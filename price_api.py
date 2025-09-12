@@ -1,16 +1,15 @@
 from flask import Flask, abort, request, jsonify
-from main_pmv_balance import pmv_balance
+from main_price import Price
 import pandas as pd
 
 app = Flask(__name__)
 
 
-@app.route('/decision_pmv_balance', methods=['POST'])
-def decision_pmv_balance():
+@app.route('/decision_price', methods=['POST'])
+def decision_price():
     register = request.get_json()
-    data = pd.read_json(register)
-    decision, predicted = pmv_balance(data)
-    #print(decision)
+    data = pd.DataFrame(register)
+    decision, predicted = Price(data)
     #運算失敗會回傳400
     if decision['StatusCode'][0] == 200:
         return jsonify({
@@ -26,6 +25,9 @@ def decision_pmv_balance():
         return jsonify({"StatusCode" : str(decision['StatusCode'][0])})
 
 if __name__ =='__main__':
-    #app.run(host='0.0.0.0', port=5000, debug=False)
-    app.run(port=5000, debug=True)
+    #app.run(host='0.0.0.0', port=5050, debug=False)
     #app.run(port=5000,debug=False)
+    app.run(port=5050,debug=True)
+
+
+    

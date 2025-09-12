@@ -1,19 +1,18 @@
 import pandas as pd
-from WOA_pmv_balance_online import WhaleOptimizationHEMS
+from WOA_price_online import WhaleOptimizationHEMS
 from pythermalcomfort.models import pmv_ppd
 import math
-from ppo_pmv_balance_online import PPOAgent, HEMSEnvironment
-from ppo_pmv_balance_retrain import ppo_retrain
+from ppo_price_online import PPOAgent, HEMSEnvironment
+from ppo_price_retrain import ppo_retrain
 import numpy as np
 import time
 import db_utility as dbu
 import datetime as dtime
 import logging
+import os
 import sys
 import uuid
-import os
 from UserFeedbackSystem import UserFeedbackSystem
-
 start = time.time()
 #%% 能耗計算
 def calculate_power(dehumidifier_humidity, indoor_humidity,
@@ -37,7 +36,7 @@ def calculate_power(dehumidifier_humidity, indoor_humidity,
     if fan_on == 'on':
         fan_consumption = fan_power
     else: fan_consumption = 0
-
+    
     # 計算冷氣功耗
     if ac_mode_weight[ac_mode] == 1:
         ac_consumption = ac_base_power * ac_mode_weight[ac_mode] * (1 + 0.1 * max(0, indoor_temp-ac_temperature)) * ac_fan_weight[ac_fan_speed] 
@@ -46,12 +45,12 @@ def calculate_power(dehumidifier_humidity, indoor_humidity,
 
     return dehumidifier_consumption + fan_consumption + ac_consumption
 #%% IoT數據讀取 (DB連線)
-def pmv_balance(data):
+def Price(data):
     try:
-        #data = pd.read_csv('./data/data-1743586080241.csv') #sample檔
+        #data = pd.read_csv('./測試數據/data-1743586080241.csv') #sample檔
         #%% log檔製做
         logging.basicConfig(
-            filename='./log/main_decision_pmv_balance_'+dtime.datetime.now().strftime('%Y-%m-%d %H%M%S')+'.log',
+            filename='./log/main_decision_price_'+dtime.datetime.now().strftime('%Y-%m-%d %H%M%S')+'.log',
             level=logging.INFO,
             force=True,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -60,7 +59,8 @@ def pmv_balance(data):
         logger = logging.getLogger()
         #%% IoT數據處理
         logger.info('Phase1: IoT資料萃取')
-        room_id = list(data.groupby('room_id')) #將同ID資料整理出並以list包裝
+        #room_id = list(data.groupby('room_username')) #將同ID資料整理出並以list包裝
+        room_id = list(data.groupby('room_id'))
         if len(room_id) != 1: # 確認只有一個room_id
             Result = pd.DataFrame([600], columns=['StatusCode'])
             return Result
@@ -135,7 +135,7 @@ def pmv_balance(data):
         fan_parameter = pd.concat([Device['ac_outlet']['cfg_power']['record_value'].reset_index(drop=True),
                                   Device['ac_outlet']['cfg_power']['device_signature'].reset_index(drop=True)], axis=1) #風扇參數取出
         fan_parameter.columns = ['cfg_power', 'device_signature']
-        # 資訊轉換 -- 現階段只嘗試冷氣與送風 因此非送風模式的全強制改成冷氣
+        # 資訊轉換
         if ac_parameter['cfg_mode'][0] != 'fan':
             ac_parameter['cfg_mode'][0] = 'cool'
         # 資訊轉換 -- 現階段只嘗試low, high, auto 因此非low與auto的全強制改成high
@@ -144,9 +144,11 @@ def pmv_balance(data):
         # 移除異常值
         Device['sensor']['op_humidity'] = Device['sensor']['op_humidity'][~((Device['sensor']['op_humidity']['record_value'] == 'unknown') | (Device['sensor']['op_humidity']['record_value'] == 'unavailable'))]
         Device['sensor']['op_temperature'] = Device['sensor']['op_temperature'][~((Device['sensor']['op_temperature']['record_value'] == 'unknown') | (Device['sensor']['op_temperature']['record_value'] == 'unavailable'))]
+
         #%% 初始用電量計算
         logger.info('Phase3: 初始用電量計算')
         indoor_data = np.array([(Device['sensor']['op_temperature']['record_value'].astype(float)), Device['sensor']['op_humidity']['record_value'].astype(float)]).T #IoT溫溼度擷取
+        
         try:
             cost_init = calculate_power(dehumidifier_humidity=float(dehumidifier_parameter['cfg_humidity'][0]),
                                         indoor_humidity=indoor_data[0][1], dehumidifier_on=dehumidifier_parameter['cfg_power'][0],
@@ -160,9 +162,15 @@ def pmv_balance(data):
                                         indoor_temp=indoor_data[0][0], ac_mode=remote_parameter['cfg_mode'][0], 
                                         ac_fan_speed=remote_parameter['cfg_fan_level'][0])
         
-        #%% PPO再訓練 -- 若過往24小時有手動操作過抑或初次使用抓不到對應room_id的ppo模型時進行
-        if ('write' in operation_parameter.values and 'user' in user_source.values) or os.path.isfile('./config/ppo_pmv_balance_'+room_id[0][0]+'.pt') == False:
-            ppo_retrain(indoor_data, room_id=room_id[0][0])
+        try: #postman與requsests的時間格式有差異
+            Device['sensor']['op_humidity']['recorded_datetime'] = pd.to_datetime(Device['sensor']['op_humidity']['recorded_datetime'], unit='ms').dt.strftime('%Y-%m-%d %H:%M:%S.%f')
+            Time = Device['sensor']['op_humidity']['recorded_datetime'].values[0].split(' ')[1].split(':')[0]
+        except:
+            Time = Device['sensor']['op_humidity']['recorded_datetime'].values[0].split(' ')[1].split(':')[0]
+        #%% PPO再訓練
+        if ('write' in operation_parameter.values and 'user' in user_source.values) or os.path.isfile('./config/ppo_price_'+room_id[0][0]+'.pt') == False:
+            ppo_retrain(indoor_data, room_id = room_id[0][0])
+
         #%% WOA+PPO環境讀取
         logger.info('Phase4: 環境設置')
         pmv_ul_ll = pd.read_csv('./config/pmv_ul_ll.csv')
@@ -178,7 +186,7 @@ def pmv_balance(data):
             pmv_up = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id[0][0]]['pmv_ul'],
             pmv_down = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id[0][0]]['pmv_ll'])
         agent = PPOAgent(state_dim=2, action_dim=4)
-        agent.load_model(room_id=room_id[0][0])
+        agent.load_model(room_id[0][0])
         # DecisionTree訓練
         trees = woa.decision_tree_train()
         # 使用者偏好回饋系統
@@ -191,18 +199,27 @@ def pmv_balance(data):
         Fitness_history = []
         Cost_woa = 0
         Cost_ppo = 0
-        #device_state_init = []
         state = Env.reset(test=True, indoor_temp=indoor_data[0][0], indoor_humidity=indoor_data[0][1])
+        # 給WOA用
+        n = len(indoor_data)
+
+        if n < 60:
+            # 資料少於 60 筆 → 對整個資料做平均，保持維度一致
+            #indoor_data = np.mean(indoor_data, axis=0, keepdims=True)
+            indoor_data = indoor_data
+        else:
+            # 修剪資料筆數為 60 的倍數，再每 60 筆取平均
+            indoor_data = indoor_data[:n - (n % 60)]
+            indoor_data = indoor_data.reshape(-1, 60, 2).mean(axis=1)
         #%%
         logger.info('Phase5: 決策計算')
         # 執行優化
         # 當決策預估節省能耗<14% 時則重複執行
         count = 0
-        while (Cost_woa/1000) < cost_init or (Cost_ppo/1000) < cost_init or (Cost_ppo == 0 and Cost_woa == 0):
+        while Cost_woa < cost_init or Cost_ppo < cost_init or (Cost_ppo == 0 and Cost_woa == 0):
             count += 1
             Result_woa = pd.DataFrame()
-            #best_position, best_fitness, fitness_history, device_state, energy_consumption, pmv['pmv'], new_indoor_data
-            best_position, best_fitness, fitness_history, device_state, cost_woa, pmv_woa, _ = woa.optimize(indoor_data, trees)
+            best_position, best_fitness, fitness_history, device_state, cost_woa, pmv_woa = woa.optimize(indoor_data, int(Time), trees)
             Cost_woa+=cost_woa
             env = pd.DataFrame(indoor_data[-1]).T
             env.columns = ['env_temp', 'env_humd']
@@ -220,7 +237,7 @@ def pmv_balance(data):
             Result_woa['dehumidifier_hum']  = Result_woa['dehumidifier_hum'].astype(int)
             Result_woa['dehumidifier_hum'] = round(Result_woa['dehumidifier_hum'] / 5) * 5
             Result_woa['dehumidifier_hum'] = np.where(Result_woa['dehumidifier'] == 0, '0', Result_woa['dehumidifier_hum'])
-            #Result_woa.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/main_woa能耗與舒適度加權平衡參數測試結果.csv')
+            #Result_woa.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/main_woa用電分配最佳化參數測試結果.csv')
             # PPO 決策生成
             env_state_test = pd.DataFrame()
             device_state_test = pd.DataFrame()
@@ -229,7 +246,7 @@ def pmv_balance(data):
             # 選擇動作
             action, _ = agent.select_action(state)
             # 執行動作
-            next_state, reward, done, env_state, device_state, pmv_ppo, cost_ppo = Env.step(action, isa)
+            next_state, reward, done, env_state, device_state, pmv_ppo, cost_ppo = Env.step(action, isa, int(Time))
             Cost_ppo+=cost_ppo
             env_state_test = env_state_test.append(pd.DataFrame(env_state).T, ignore_index=True)
             device_state_test = device_state_test.append(pd.DataFrame(device_state).T, ignore_index=True)
@@ -242,9 +259,8 @@ def pmv_balance(data):
             Result_ppo['dehumidifier_hum']  = Result_ppo['dehumidifier_hum'].astype(int)
             Result_ppo['dehumidifier_hum'] = round(Result_ppo['dehumidifier_hum'] / 5) * 5
             Result_ppo['dehumidifier_hum'] = np.where(Result_ppo['dehumidifier'] == 0, '0', Result_ppo['dehumidifier_hum'])
-            #Result_ppo.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/main_ppo能源與舒適度加權參數應用結果.csv')
-           # 判斷是否達成節能
-            if (Cost_woa/1000) < cost_init or (Cost_ppo/1000) < cost_init \
+            #Result_ppo.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/main_ppo用電分配最佳化參數應用結果.csv')
+            if Cost_woa < cost_init or Cost_ppo < cost_init \
                  and (Result_ppo['pmv'][0] < 1 or Result_woa['pmv'][0] < 1) :
                 break
             elif count == 4:
@@ -255,13 +271,13 @@ def pmv_balance(data):
         end = time.time()
         print(end-start)
         # 判斷使用的決策
-        if Cost_woa > Cost_ppo:
+        if float(Cost_woa) > float(Cost_ppo):
             Result = Result_woa
             alg = 'woa'
-        elif Cost_woa < Cost_ppo:
+        elif float(Cost_woa) < float(Cost_ppo):
             Result = Result_ppo
             alg = 'ppo'
-        elif Cost_woa == Cost_ppo:
+        elif float(Cost_woa) == float(Cost_ppo):
             if abs(Result_ppo['pmv'][0]) < abs(Result_woa['pmv'][0]):
                 Result = Result_ppo
                 alg = 'ppo'
@@ -289,17 +305,15 @@ def pmv_balance(data):
 
         #%% 數值轉換
         logger.info('Phase6: 數值轉換')
-        Result['dehumidifier'] = np.where((Result['dehumidifier'] == 0) | (Result['dehumidifier'] == '0'), 'off', Result['dehumidifier'])
-        Result['dehumidifier'] = np.where((Result['dehumidifier'] == 1) | (Result['dehumidifier'] == '1'), 'on', Result['dehumidifier'])
-        Result['fan_state'] = np.where((Result['fan_state'] == 0) | (Result['fan_state'] == '0'), 'off', Result['fan_state'])
-        Result['fan_state'] = np.where((Result['fan_state'] == 1) | (Result['fan_state'] == '1'), 'on', Result['fan_state'])
-        Result['ac_mode'] = np.where((Result['ac_mode'] == 1) | (Result['ac_mode'] == '1'), 'cool', Result['ac_mode'])
-        Result['ac_mode'] = np.where((Result['ac_mode'] == 0) | (Result['ac_mode'] == '0'), 'fan', Result['ac_mode'])
-        Result['ac_fan'] = np.where((Result['ac_fan'] == 0) | (Result['ac_fan'] == '0'), 'low', Result['ac_fan'])
-        Result['ac_fan'] = np.where((Result['ac_fan'] == 1) | (Result['ac_fan'] == '1'), 'high', Result['ac_fan'])
-        Result['ac_fan'] = np.where((Result['ac_fan'] == 2) | (Result['ac_fan'] == '2'), 'auto', Result['ac_fan'])
-        
-        
+        Result['dehumidifier'] = np.where(Result['dehumidifier'] == 0, 'off', Result['dehumidifier'])
+        Result['dehumidifier'] = np.where(Result['dehumidifier'] == 1, 'on', Result['dehumidifier'])
+        Result['fan_state'] = np.where(Result['fan_state'] == 0, 'off', Result['fan_state'])
+        Result['fan_state'] = np.where(Result['fan_state'] == 1, 'on', Result['fan_state'])
+        Result['ac_mode'] = np.where(Result['ac_mode'] == 1, 'cool', Result['ac_mode'])
+        Result['ac_mode'] = np.where(Result['ac_mode'] == 0, 'fan', Result['ac_mode'])
+        Result['ac_fan'] = np.where(Result['ac_fan'] == 0, 'low', Result['ac_fan'])
+        Result['ac_fan'] = np.where(Result['ac_fan'] == 1, 'high', Result['ac_fan'])
+        Result['ac_fan'] = np.where(Result['ac_fan'] == 2, 'auto', Result['ac_fan'])
         try:
             Result['ac_temp'] = np.where(Result['ac_temp'] == '-', '0', Result['ac_temp'])
         except: pass
@@ -308,8 +322,8 @@ def pmv_balance(data):
         except:
             Result = Result.drop(['env_temp', 'env_humd'], axis=1)
 
-        # 使用者偏好數值轉換  
-        try:  
+        # 使用者偏好數值轉換   
+        try: 
             predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('0', 'off')
             predicted['dehumidifier'] = str(predicted['dehumidifier']).replace('1', 'on')
             predicted['fan_state'] = str(predicted['fan_state']).replace('0', 'off')
@@ -321,7 +335,7 @@ def pmv_balance(data):
             predicted['ac_fan'] = str(predicted['ac_fan']).replace('2', 'auto')
         except: pass
         Result['StatusCode'] = 200
-        #%% 決策insert到DB -- 此段現階段設計不使用
+        #%% 決策insert到DB
         # 決策整理成插入格式
         logger.info('Phase7: 格式整理')
         UUID = uuid.uuid4().hex
@@ -338,25 +352,25 @@ def pmv_balance(data):
             decision.loc[3] = [room_id[0][0], UUID,'remote', 'cfg_mode', Result['ac_mode'][0]]
             decision.loc[4] = [room_id[0][0], UUID,'remote', 'cfg_fan_level', Result['ac_fan'][0]]
         decision.loc[5] = [room_id[0][0], UUID,'ac_outlet', 'cfg_power', Result['fan_state'][0]]
-        situation = pd.DataFrame(['pmv_balance'], columns=['inference_situation'])
+        situation = pd.DataFrame(['price'], columns=['inference_situation'])
         situation = pd.concat([situation]*6, ignore_index=True)
         Alg = pd.DataFrame([alg], columns=['inference_algorithm'])
         Alg = pd.concat([Alg]*6, ignore_index=True)
         decision = pd.concat([decision, situation, Alg], axis=1)
         #%% insert
-        logger.info('Phase8: 塞入DB')
         '''
+        logger.info('Phase8: 塞入DB')
         db_conn = dbu.DB_UTILITY('pc0') #資料庫連接
         db_conn.insert_table(decision,'open_energyhub.decision_parameter_records')
         db_conn.DB_disconnect()
-    ''' 
-        logging.info('run end')
+        return Result
+        '''
         return Result, predicted
     #%% 例外紀錄
     except Exception as e:
         logging.error("錯誤類型：%s" % Exception)
         logging.error("錯誤事件：%s" % e)
-        logging.error('Error Line {}'.format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
+        #logging.error('Error Line {}'.format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
         print("錯誤類型：%s" % Exception)
         print("錯誤事件：%s" % e)
         print('Error Line {}'.format(sys.exc_info()[-1].tb_lineno),type(e).__name__,e)
@@ -364,4 +378,3 @@ def pmv_balance(data):
         Result = pd.DataFrame([400], columns=['StatusCode'])
         predicted = {}
         return Result, predicted
-        
