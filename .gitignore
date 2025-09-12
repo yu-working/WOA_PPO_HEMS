@@ -17,3 +17,4 @@ db_utility.py
 .env
 __pycache__/
 *.pyc
+test*.py
