@@ -6,6 +6,7 @@ import json
 import requests
 from urllib.parse import urljoin
 from dotenv import load_dotenv
+import pandas as pd
 
 load_dotenv()
 
@@ -15,6 +16,7 @@ try:
     db_user = os.getenv("DB_USER")
     db_password = os.getenv("DB_PASSWORD")
     TIME_REC_PATH = os.getenv("TIME_REC_PATH", "./data/id_time_rec.json")
+    TIME_TO_SLEEP = int(os.getenv("TIME_TO_SLEEP", 2 * 60))
     API_BASE_URL = os.getenv("API_BASE_URL")
     API_SECRET = os.getenv("API_SECRET")
     QUESTIONNAIRE_ID_PATH = os.getenv(
@@ -63,6 +65,46 @@ def send_questionnaire(room_id, questionnaire_data):
         print(f"❌ An error occurred during the request: {req_err}")
     except Exception as e:
         print(f"❌ An unexpected error occurred: {e}")
+
+
+def get_sim_data(username: str):
+    response = requests.get(
+        f"http://openenergyhub.energy-active.org.tw:9002/dryrun/decision?notify=false&secret=a1b2c3d4e5f6g7h8&username={username}"
+    )
+
+    js = response.json()
+    js_data = pd.DataFrame(js["training_data"])
+    js_data.recorded_datetime = pd.to_datetime(js_data.recorded_datetime).dt.strftime(
+        "%Y-%m-%d %H:%M"
+    )
+    pivot_df = js_data.pivot_table(
+        index="recorded_datetime",
+        columns="capability_name",
+        values="record_value",
+        aggfunc="first",
+    ).reset_index()
+
+    return pivot_df
+
+
+def get_sim_data_roomid(room_id: str):
+    response = requests.get(
+        f"http://openenergyhub.energy-active.org.tw:9002/dryrun/decision?notify=false&secret=a1b2c3d4e5f6g7h8&room_id={room_id}"
+    )
+
+    js = response.json()
+    js_data = pd.DataFrame(js["training_data"])
+    js_data.recorded_datetime = pd.to_datetime(js_data.recorded_datetime).dt.strftime(
+        "%Y-%m-%d %H:%M"
+    )
+    pivot_df = js_data.pivot_table(
+        index="recorded_datetime",
+        columns="capability_name",
+        values="record_value",
+        aggfunc="first",
+    ).reset_index()
+
+    return pivot_df
 
 
 def connect_user_ai_decision_db(users_to_check: list) -> tuple[list, list]:
@@ -124,7 +166,7 @@ def background_check_loop():
             # 檢查問卷 JSON 檔案是否存在
             if not os.path.exists(QUESTIONNAIRE_ID_PATH):
                 print(f"檔案不存在：{QUESTIONNAIRE_ID_PATH}")
-                time.sleep(60)
+                time.sleep(TIME_TO_SLEEP)
                 continue
 
             # 讀取待填寫問卷的使用者
@@ -135,27 +177,47 @@ def background_check_loop():
             users_to_remove = []
 
             if not users_to_check:
-                time.sleep(60)
+                time.sleep(TIME_TO_SLEEP)
                 continue
 
             users_to_check, users_to_remove = connect_user_ai_decision_db(
                 users_to_check
             )
 
-            for room_id in users_to_check:
+            for remark in users_to_check:
                 # 檢查時間差是否超過 20 分鐘
-                last_send_time_str = questionnaire_data[room_id]["time"]
+                last_send_time_str = questionnaire_data[remark]["time"]
                 last_send_time = datetime.fromisoformat(last_send_time_str)
                 time_difference = datetime.now() - last_send_time
 
                 if time_difference.total_seconds() > 20 * 60:
-                    send_questionnaire(room_id, questionnaire_data[room_id])
-                    users_to_remove.append(room_id)
+                    send_questionnaire(
+                        questionnaire_data[remark]["room_id"],
+                        questionnaire_data[remark],
+                    )
+                    users_to_remove.append(remark)
+                else:
+                    try:
+                        sim_data_ser = get_sim_data(remark).iloc[-1]
+                        op_hum = sim_data_ser["op_humidity"]
+                        op_temp = sim_data_ser["op_temperature"]
+                        if op_hum is not None and op_temp is not None:
+                            if (
+                                op_hum <= questionnaire_data[remark]["best_humd"]
+                                and op_temp <= questionnaire_data[remark]["best_temp"]
+                            ):
+                                send_questionnaire(
+                                    questionnaire_data[remark]["room_id"],
+                                    questionnaire_data[remark],
+                                )
+                                users_to_remove.append(remark)
+                    except Exception as e:
+                        print(f"[Error] get_sim_data for decision remark {remark}: {e}")
 
             # 從 dictionary 中刪除已處理的 key
             if users_to_remove:
-                for room_id in users_to_remove:
-                    questionnaire_data.pop(room_id, None)
+                for remark in users_to_remove:
+                    questionnaire_data.pop(remark, None)
 
                 with open(QUESTIONNAIRE_ID_PATH, "w", encoding="utf-8") as f:
                     json.dump(questionnaire_data, f, indent=4)
@@ -169,8 +231,8 @@ def background_check_loop():
         except Exception as e:
             print(f"[Error] background_check_loop: {e}")
 
-        # 每分鐘執行一次
-        time.sleep(60)
+        # 每x分鐘執行一次
+        time.sleep(TIME_TO_SLEEP)
 
 
 def chek_user_questionnaire_status(
