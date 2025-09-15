@@ -14,3 +14,7 @@ user_feedback_log.csv
 
 #db_utility.py
 db_utility.py
+.env
+__pycache__/
+*.pyc
+test*.py

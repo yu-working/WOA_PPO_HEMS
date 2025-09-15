@@ -11,10 +11,10 @@ from UserFeedbackSystem import UserFeedbackSystem
 class WhaleOptimizationHEMS:
     def __init__(
         self,
-        n_whales: int = 30,
-        max_iter: int = 100,
+        n_whales: int = 24,
+        max_iter: int = 50,
         temp_bounds: Tuple[float, float] = (18.0, 28.0),
-        humidity_bounds: Tuple[float, float] = (30.0, 70.0),
+        humidity_bounds: Tuple[float, float] = (40.0, 70.0),
         b: float = 1.0,
         a_decrease_factor: float = 2,
         pmv_up: float = 0.5,
@@ -88,20 +88,8 @@ class WhaleOptimizationHEMS:
         for i in range(self.n_whales):
             population_humd.append(random.randint(self.humidity_bounds[0], self.humidity_bounds[1]))
         population_humd = np.array(population_humd)
-        # 室外溫度數據 (24-35°C)
-        out_temperature = []
-        for i in range(self.n_whales):
-            out_temperature.append(random.randint(24, 35))
-        out_temperature = np.array(out_temperature)
-        # 室外濕度數據 (40-80%)
-        out_humidity = []
-        for i in range(self.n_whales):
-            out_humidity.append(random.randint(40, 80))
-        out_humidity = np.array(out_humidity)
-           
-        out_conditions = np.column_stack([out_temperature, out_humidity])
         population = np.column_stack([population_temp, population_humd])
-        return population#, out_conditions
+        return population
     
     def calculate_power(self, dehumidifier_humidity, indoor_humidity,
                         dehumidifier_on, fan_on, ac_temperature, indoor_temp,
@@ -141,11 +129,7 @@ class WhaleOptimizationHEMS:
         返回:
             適應度值(越低越好)
         """
-        # 舒適度參數(理想值)
-      
-        #temp_deviation = abs(temp-outdoor_temp)
-       # humidity_deviation = abs(humidity-outdoor_hum)
-      
+
         # 使用ANFIS預測設備狀態
         device_state = self.predict_control(trees, temp, humidity, new_temp, new_humidity)
         device_state = pd.DataFrame(device_state, columns=['dehumidifier', 'dehumidifier_hum', 'ac_temp', 'ac_fan', 'ac_mode', 'fan_state'], index=[0])
@@ -159,18 +143,8 @@ class WhaleOptimizationHEMS:
         pmv = pmv_ppd(tdb=temp, tr=temp, vr=0.25, 
                       rh=humidity, met=1, clo=0.5, limit_inputs=False)
         
-        # 根據時間段設定電價
-        if step >= 24:
-            step = step-24
-        if step in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
-            price = 1.96  # 離峰時段
-        elif step in [9, 10, 11, 12, 13, 14, 15, 22, 23]:
-            price = 4.54  # 半尖峰時段
-        else:
-            price = 6.92  # 尖峰時段
-
         # 計算最終適應度值
-        fitness = energy_consumption * price
+        fitness = energy_consumption 
         pmv_value = (pmv['pmv'])
         if float(self.pmv_down) < pmv_value < float(self.pmv_up):
             pass
@@ -225,6 +199,7 @@ class WhaleOptimizationHEMS:
             fitness_history: 每次迭代的最佳適應度值列表
         """     
         # 初始化群體
+        fc = 0
         population = indoor_data.copy()
         # 初始化最佳解
         fitness_values = np.array([
@@ -237,7 +212,7 @@ class WhaleOptimizationHEMS:
         
         # 優化歷史記錄
         fitness_history = [best_fitness]
-        
+        prev_position = best_position.copy()
         # 主要迭代循環
         for iteration in range(self.max_iter):
             # 更新a參數
@@ -274,8 +249,12 @@ class WhaleOptimizationHEMS:
                     new_position = spiral
                 
                 # 應用邊界並更新位置
+                if new_position[0] - population[i][0] < 1 or new_position[0] - indoor_data[-1][0] < 1:
+                    continue
+                if new_position[1] - population[i][1] < 5 or new_position[1] - indoor_data[-1][1] < 5:
+                    continue
                 population[i] = self.apply_bounds(new_position)
-                
+
                 # 必要時更新最佳解
                 current_fitness = self.fitness_function(
                     indoor_data[-1][0],
@@ -285,6 +264,7 @@ class WhaleOptimizationHEMS:
                     i,
                     trees
                 )
+                fc += 1
                 if current_fitness < best_fitness:
                     best_position = population[i].copy()
                     best_fitness = current_fitness
@@ -292,28 +272,10 @@ class WhaleOptimizationHEMS:
             fitness_history.append(best_fitness)
             
         # 插入Decision Tree
-        indoor_device_state = self.predict_control(trees, indoor_data[-1][0], indoor_data[-1][1], indoor_data[-1][0], indoor_data[-1][1])
         best_device_state = self.predict_control(trees, indoor_data[-1][0], indoor_data[-1][1], best_position[0], best_position[1])
-
-        indoor_energy_consumption = self.calculate_power(indoor_device_state['dehumidifier_hum'], indoor_data[-1][1],
-                                                   indoor_device_state['dehumidifier'], indoor_device_state['fan_state'], indoor_device_state['ac_temp'], indoor_data[-1][0], 
-                                                   indoor_device_state['ac_mode'], indoor_device_state['ac_fan']) 
-        
         best_energy_consumption = self.calculate_power(best_device_state['dehumidifier_hum'], indoor_data[-1][1],
                                                    best_device_state['dehumidifier'], best_device_state['fan_state'], best_device_state['ac_temp'], indoor_data[-1][0], 
                                                    best_device_state['ac_mode'], best_device_state['ac_fan']) 
-        '''
-        if indoor_energy_consumption < best_energy_consumption:
-            energy_consumption = indoor_energy_consumption
-            pmv = pmv_ppd(tdb=indoor_data[-1][0], tr=indoor_data[-1][0], vr=0.25, 
-                      rh=indoor_data[-1][1], met=1, clo=0.5, limit_inputs=False)
-            device_state = pd.DataFrame([indoor_device_state])
-        else :
-            energy_consumption = best_energy_consumption
-            pmv = pmv_ppd(tdb=best_position[0], tr=best_position[0], vr=0.25, 
-                      rh=best_position[1], met=1, clo=0.5, limit_inputs=False)
-            device_state = pd.DataFrame([best_device_state])
-            '''
         energy_consumption = best_energy_consumption
         pmv = pmv_ppd(tdb=best_position[0], tr=best_position[0], vr=0.25, 
                       rh=best_position[1], met=1, clo=0.5, limit_inputs=False)
@@ -327,7 +289,8 @@ class WhaleOptimizationHEMS:
         else:
             price = 6.92
         cost = energy_consumption/1000*price
-        print(device_state)            
+        print(fc)
+        print(device_state)           
         return best_position, best_fitness, fitness_history, device_state, cost, pmv['pmv']
 #%%
 if __name__ == '__main__':
@@ -337,7 +300,7 @@ if __name__ == '__main__':
     # 初始化優化器
     woa = WhaleOptimizationHEMS(
     n_whales=24,
-    max_iter=100,
+    max_iter=50,
     temp_bounds=(26.0, 31.0),
     humidity_bounds=(40.0, 70.0),
     pmv_up = pmv_ul_ll.loc[pmv_ul_ll['room_id'] == room_id]['pmv_ul'],
