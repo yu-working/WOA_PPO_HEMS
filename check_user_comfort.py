@@ -1,12 +1,13 @@
 import time
 import psycopg2
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import json
 import requests
 from urllib.parse import urljoin
 from dotenv import load_dotenv
-import pandas as pd
+
+from typing import Optional, Tuple
 
 load_dotenv()
 
@@ -67,44 +68,55 @@ def send_questionnaire(room_id, questionnaire_data):
         print(f"❌ An unexpected error occurred: {e}")
 
 
-def get_sim_data(username: str):
-    response = requests.get(
-        f"http://openenergyhub.energy-active.org.tw:9002/dryrun/decision?notify=false&secret=a1b2c3d4e5f6g7h8&username={username}"
-    )
+def get_latest_temp_humidity(room_id: str) -> Optional[Tuple[int, int]]:
+    """
+    查詢指定使用者(room_id) 最新一筆溫度(op_temperature)與濕度(op_humidity)紀錄，
+    並將 record_value 四捨五入成整數後回傳。
 
-    js = response.json()
-    js_data = pd.DataFrame(js["training_data"])
-    js_data.recorded_datetime = pd.to_datetime(js_data.recorded_datetime).dt.strftime(
-        "%Y-%m-%d %H:%M"
-    )
-    pivot_df = js_data.pivot_table(
-        index="recorded_datetime",
-        columns="capability_name",
-        values="record_value",
-        aggfunc="first",
-    ).reset_index()
+    回傳格式: (temperature, humidity) 例如 (25, 60)
+    """
+    conn = None
+    cur = None
+    try:
+        # 建立資料庫連線
+        conn = psycopg2.connect(
+            host=db_host,
+            dbname=db_database,
+            user=db_user,
+            password=db_password,
+        )
+        cur = conn.cursor()
 
-    return pivot_df
+        query = """
+            SELECT DISTINCT ON (capability_name)
+                   capability_name,
+                   record_value
+            FROM open_energyhub.view_latest_24h_union_parameters_per_minute
+            WHERE room_id = %s
+              AND capability_name IN ('op_temperature', 'op_humidity')
+            ORDER BY capability_name, recorded_datetime DESC;
+        """
+        cur.execute(query, (room_id,))
+        rows = cur.fetchall()
 
+        temp, hum = None, None
+        for cap, val in rows:
+            if cap == "op_temperature":
+                temp = round(float(val))
+            elif cap == "op_humidity":
+                hum = round(float(val))
 
-def get_sim_data_roomid(room_id: str):
-    response = requests.get(
-        f"http://openenergyhub.energy-active.org.tw:9002/dryrun/decision?notify=false&secret=a1b2c3d4e5f6g7h8&room_id={room_id}"
-    )
+        return temp, hum
 
-    js = response.json()
-    js_data = pd.DataFrame(js["training_data"])
-    js_data.recorded_datetime = pd.to_datetime(js_data.recorded_datetime).dt.strftime(
-        "%Y-%m-%d %H:%M"
-    )
-    pivot_df = js_data.pivot_table(
-        index="recorded_datetime",
-        columns="capability_name",
-        values="record_value",
-        aggfunc="first",
-    ).reset_index()
+    except Exception as e:
+        print(f"❌ Connect Query Error: {e}")
+        return None, None
 
-    return pivot_df
+    finally:
+        if cur is not None:
+            cur.close()
+        if conn is not None:
+            conn.close()
 
 
 def connect_user_ai_decision_db(users_to_check: list) -> tuple[list, list]:
@@ -198,9 +210,9 @@ def background_check_loop():
                     users_to_remove.append(remark)
                 else:
                     try:
-                        sim_data_ser = get_sim_data(remark).iloc[-1]
-                        op_hum = sim_data_ser["op_humidity"]
-                        op_temp = sim_data_ser["op_temperature"]
+                        op_temp, op_hum = get_latest_temp_humidity(
+                            questionnaire_data[remark]["room_id"]
+                        )
                         if op_hum is not None and op_temp is not None:
                             if (
                                 op_hum <= questionnaire_data[remark]["best_humd"]
@@ -258,13 +270,13 @@ def chek_user_questionnaire_status(
     current_time = datetime.now()
     should_update = False
 
-    # 檢查 room_id 是否存在且時間差超過24小時
+    # 檢查 room_id 是否存在且時間差超過12小時
     if room_id in time_rec_data:
         last_update_str = time_rec_data[room_id]
         last_update_time = datetime.fromisoformat(last_update_str)
         time_difference = current_time - last_update_time
 
-        if time_difference.total_seconds() >= 24 * 3600:
+        if time_difference.total_seconds() >= 12 * 3600:
             should_update = True
     else:
         # 如果 room_id 不在 dictionary 中，則視為需要更新
@@ -298,6 +310,6 @@ def chek_user_questionnaire_status(
         with open(QUESTIONNAIRE_ID_PATH, "w", encoding="utf-8") as f:
             json.dump(remark_data, f, indent=4)
 
-        print(f"Room ID {room_id} 的資料已成功更新。")
+        print(f"room_id {room_id} 的資料已成功更新。")
     else:
-        print(f"Room ID {room_id} 的資料在過去24小時內已更新，無需再次操作。")
+        print(f"room_id {room_id} 的資料在過去12小時內已更新，無需再次操作。")
