@@ -75,14 +75,14 @@ WOA_PPO_HEMS/
 ├─ config/
 │   ├─ 紅外線遙控器冷氣調控指令集.csv      # 冷氣遙控指令集
 │   ├─ pmv_ul_ll.csv                     # 使用者個人化 PMV 舒適區間
-│   └─ ppo_pmv_balance_{room_id}.pt      # PPO模型存檔
+│   └─ ppo_price_{room_id}.pt      # PPO模型存檔
 ├─ data/
 │   ├─ balance_decision_tree_data.csv   # 決策樹建樹資料
 │   ├─ data-1743586080241.csv           # 測試用 sample 檔
 │   ├─ id_time_rec.json                 # 時間紀錄檔
 │   └─ questionnaire_id.json            # 待填寫問卷使用者
 └─ log/
-    └─ main_decision_pmv_balance_{datetime}.log    # 執行log檔
+    └─ main_decision_price_{datetime}.log    # 執行log檔
 ```
 
 ## 安裝需求
@@ -108,18 +108,18 @@ request
 
 ## 執行流程
 
-#### 1.執行 `pmv_balance_api.py`
+#### 1.執行 `price_api.py`
 
 #### 2.開啟命令提示字元
 
 使用`curl`指令來傳送JSON資料至伺服器。以下是JSON內容的範例
 ```
-curl -X POST http://127.0.0.1:5000/decision_pmv_balance -H "Content-Type: application/json" -d "[{\"room_id\":\"22222222-2222-2222-2222-222222222222\",\"operation_direction\":\"read\",\"source\":\"energyhub\",\"recorded_datetime\":\"2025-04-02 17:27:19\",\"appliance_name\":\"air_conditioner\",\"capability_name\":\"cfg_fan_level\",\"record_value\":\"medium\",\"device_signature\":\"44444444-4444-4444-4444-444444444441\"},...]`
+curl -X POST http://127.0.0.1:5000/decision_price -H "Content-Type: application/json" -d "[{\"room_id\":\"22222222-2222-2222-2222-222222222222\",\"operation_direction\":\"read\",\"source\":\"energyhub\",\"recorded_datetime\":\"2025-04-02 17:27:19\",\"appliance_name\":\"air_conditioner\",\"capability_name\":\"cfg_fan_level\",\"record_value\":\"medium\",\"device_signature\":\"44444444-4444-4444-4444-444444444441\"},...]`
 ```
 
 上述範例為呈現簡潔，省略部分JSON物件，請將`...`替換為完整的資料。
 
-#### 3.呼叫 `main_pmv_balance.py` function `pmv_balance`
+#### 3.呼叫 `main_price.py` function `Price`
 
 #### 4.讀取數據
 
@@ -131,7 +131,7 @@ curl -X POST http://127.0.0.1:5000/decision_pmv_balance -H "Content-Type: applic
 
 #### 7.建立WOA、PPO環境
 
- - 若未讀取到PPO訓練模型則呼叫 `ppo_pmv_balance_retrain.py` 訓練模型
+ - 若未讀取到PPO訓練模型則呼叫 `ppo_price_retrain.py` 訓練模型
  - 讀取 `pmv_ul_ll.csv`，系統將根據使用者使用習慣，設定個人化的 PMV 舒適範圍（上下限），該範圍將作為最佳化演算法的約束條件。
  - 初始化WOA、PPO環境
 
