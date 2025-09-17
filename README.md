@@ -60,21 +60,27 @@
 ```
 WOA_PPO_HEMS/
 │
-├─ pmv_balance_api.py          # 主程式入口，負責執行整體邏輯與資料輸入/輸出
-├─ main_pmv_balance.py         # 主程式，負責接收API的資料並進行資料處理、決策產出儲存與回傳
+├─ .env                        # 環境變數檔案
+├─ check_user_comfort.py       # 主程式入口，負責執行整體邏輯與資料輸入/輸出
 ├─ db_utility.py               # 資料庫連接程式，負責將生成的決策存入DB
-├─ ppo_pmv_balance_online.py   # PPO決策運算程式
-├─ ppo_pmv_balance_retrain.py  # PPO模型訓練程式
-├─ WOA_pmv_balance_online.py   # WOA決策運算程式
-├─ UserFeedbackSystem.py       # 使用者調控回饋程式
+├─ Dockerfile                  # Docker 映像檔建置設定
+├─ main_price.py               # 主程式，負責接收API的資料並進行資料處理、決策產出儲存與回傳
+├─ ppo_price_online.py         # PPO決策運算程式
+├─ ppo_price_retrain.py        # PPO模型訓練程式
+├─ price_api.py                # 主程式入口，負責執行整體邏輯與資料輸入/輸出
+├─ requirements.txt            # Python 依賴套件清單
 ├─ user_feedback_log.csv       # 使用者調控回饋紀錄
+├─ UserFeedbackSystem.py       # 使用者調控回饋程式
+├─ WOA_price_online.py         # WOA決策運算程式
 ├─ config/
 │   ├─ 紅外線遙控器冷氣調控指令集.csv      # 冷氣遙控指令集
 │   ├─ pmv_ul_ll.csv                     # 使用者個人化 PMV 舒適區間
 │   └─ ppo_pmv_balance_{room_id}.pt      # PPO模型存檔
 ├─ data/
+│   ├─ balance_decision_tree_data.csv   # 決策樹建樹資料
 │   ├─ data-1743586080241.csv           # 測試用 sample 檔
-│   └─ balance_decision_tree_data.csv     # 決策樹建樹資料
+│   ├─ id_time_rec.json                 # 時間紀錄檔
+│   └─ questionnaire_id.json            # 待填寫問卷使用者
 └─ log/
     └─ main_decision_pmv_balance_{datetime}.log    # 執行log檔
 ```
@@ -96,6 +102,8 @@ pymssql == 2.2.1
 sshtunnel == 0.4.0
 torch == 2.2.0
 torchvision == 0.17.0
+python-dotenv
+request
 ```
 
 ## 執行流程
@@ -115,7 +123,7 @@ curl -X POST http://127.0.0.1:5000/decision_pmv_balance -H "Content-Type: applic
 
 #### 4.讀取數據
 
-目前使用 `data-1743586080241.csv` 作為演示範例
+可使用 `data-1743586080241.csv` 作為演示範例
 
 #### 5.開始生成log檔案
 
@@ -123,8 +131,8 @@ curl -X POST http://127.0.0.1:5000/decision_pmv_balance -H "Content-Type: applic
 
 #### 7.建立WOA、PPO環境
 
- - 若未讀取到PPO再訓練模型則呼叫 `ppo_pmv_balance_retrain.py` 訓練模型
- - 讀取 `pmv_ul_ll.csv`，系統將根據使用者使用習慣，設定個人化的 PMV 舒適範圍（上下限），該範圍將作為最佳化演算法的約束條件，用於平衡能源消耗與使用者舒適度。
+ - 若未讀取到PPO訓練模型則呼叫 `ppo_pmv_balance_retrain.py` 訓練模型
+ - 讀取 `pmv_ul_ll.csv`，系統將根據使用者使用習慣，設定個人化的 PMV 舒適範圍（上下限），該範圍將作為最佳化演算法的約束條件。
  - 初始化WOA、PPO環境
 
 #### 8.決策計算
