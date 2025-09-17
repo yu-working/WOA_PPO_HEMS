@@ -60,21 +60,27 @@
 ```
 WOA_PPO_HEMS/
 │
-├─ pmv_balance_api.py          # 主程式入口，負責執行整體邏輯與資料輸入/輸出
-├─ main_pmv_balance.py         # 主程式，負責接收API的資料並進行資料處理、決策產出儲存與回傳
+├─ .env                        # 環境變數檔案
+├─ check_user_comfort.py       # 主程式入口，負責執行整體邏輯與資料輸入/輸出
 ├─ db_utility.py               # 資料庫連接程式，負責將生成的決策存入DB
+├─ Dockerfile                  # Docker 映像檔建置設定
+├─ main_pmv_balance.py         # 主程式，負責接收API的資料並進行資料處理、決策產出儲存與回傳
 ├─ ppo_pmv_balance_online.py   # PPO決策運算程式
 ├─ ppo_pmv_balance_retrain.py  # PPO模型訓練程式
-├─ WOA_pmv_balance_online.py   # WOA決策運算程式
-├─ UserFeedbackSystem.py       # 使用者調控回饋程式
+├─ pmv_balance_api.py          # 主程式入口，負責執行整體邏輯與資料輸入/輸出
+├─ requirements.txt            # Python 依賴套件清單
 ├─ user_feedback_log.csv       # 使用者調控回饋紀錄
+├─ UserFeedbackSystem.py       # 使用者調控回饋程式
+├─ WOA_pmv_balance_online.py   # WOA決策運算程式
 ├─ config/
 │   ├─ 紅外線遙控器冷氣調控指令集.csv      # 冷氣遙控指令集
 │   ├─ pmv_ul_ll.csv                     # 使用者個人化 PMV 舒適區間
 │   └─ ppo_pmv_balance_{room_id}.pt      # PPO模型存檔
 ├─ data/
+│   ├─ balance_decision_tree_data.csv   # 決策樹建樹資料
 │   ├─ data-1743586080241.csv           # 測試用 sample 檔
-│   └─ balance_decision_tree_data.csv     # 決策樹建樹資料
+│   ├─ id_time_rec.json                 # 時間紀錄檔
+│   └─ questionnaire_id.json            # 待填寫問卷使用者
 └─ log/
     └─ main_decision_pmv_balance_{datetime}.log    # 執行log檔
 ```
@@ -96,6 +102,8 @@ pymssql == 2.2.1
 sshtunnel == 0.4.0
 torch == 2.2.0
 torchvision == 0.17.0
+python-dotenv
+request
 ```
 
 ## 執行流程
