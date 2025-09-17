@@ -26,8 +26,9 @@ def decision_price():
 
 if __name__ =='__main__':
     #app.run(host='0.0.0.0', port=5050, debug=False)
-    #app.run(port=5000,debug=False)
-    app.run(port=5050,debug=True)
+    t = threading.Thread(target=background_check_loop, daemon=True)
+    t.start()
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
 
     
