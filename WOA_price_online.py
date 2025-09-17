@@ -296,7 +296,7 @@ class WhaleOptimizationHEMS:
 if __name__ == '__main__':
     start = time.time()
     pmv_ul_ll = pd.read_csv('./config/pmv_ul_ll.csv')
-    room_id = 'luckyman761119@gmail.com'
+    room_id = '123@gmail.com'
     # 初始化優化器
     woa = WhaleOptimizationHEMS(
     n_whales=24,

@@ -342,7 +342,7 @@ if __name__ == "__main__":
     start = time.time()
     env = HEMSEnvironment()
     agent = PPOAgent(state_dim=2, action_dim=4)
-    isa = pd.read_csv('C:/Users/hankli/Documents/114計劃相關/測試數據/紅外線遙控器冷氣調控指令集.csv')
+    isa = pd.read_csv('./config/紅外線遙控器冷氣調控指令集.csv')
     
     total_energy_consumption = []
     Device_state = pd.DataFrame()
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     Result = pd.concat([Env_state, Device_state, Pmv], axis=1)
     Result.columns = ['env_temp', 'env_humd', 'dehumidifier_on', 'dehumidifier_humidity',
              'ac_temp', 'ac_fan', 'ac_mode', 'fan_on', 'pmv']
-    Result.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/PPO用電分配參數測試結果.csv')
+    Result.to_csv('./PPO用電分配參數測試結果.csv')
     end = time.time()
     print(end-start)
 #%% 保存和加載模型測試
@@ -437,33 +437,6 @@ if __name__ == "__main__":
     Result_test['dehumidifier_hum'] = round(Result_test['dehumidifier_hum'] / 5) * 5
     Result_test['dehumidifier_hum'] = np.where(Result_test['dehumidifier'] == 0, '-', Result_test['dehumidifier_hum'])
     Result_test = Result_test.set_index(pd.Series(['14','15', '16', '17', '18', '19', '20']))
-    Result_test.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/PPO用電分配參數應用結果.csv')
+    Result_test.to_csv('./PPO用電分配參數應用結果.csv')
     end = time.time()
     print(end-start)
-#%% 計算節能效果
-
-    # 讀取歷史數據
-    data = pd.read_csv('C:/Users/hankli/Documents/114計劃相關/測試數據/nilm_data_ritaluetb_hour.csv')
-    data = data.iloc[14:21, :]
-    
-    # 計算不同時段的電價
-    price = [[], [], []]
-    for i in range(len(data)):
-        if int(data.iloc[i, 0].split(' ')[1].split(':')[0]) in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
-            price[0].append(data.iloc[i, 6])
-        elif int(data.iloc[i, 0].split(' ')[1].split(':')[0]) in [9, 10, 11, 12, 13, 14, 15, 22, 23]:
-            price[1].append(data.iloc[i, 6])
-        elif int(data.iloc[i, 0].split(' ')[1].split(':')[0]) in [16, 17, 18, 19, 20, 21]:
-            price[2].append(data.iloc[i, 6])
-
-    # 計算總電費
-    kwh = 0
-    for i in range(3):
-        if i == 0:
-            kwh += (sum(price[i])/60000) * 1.96
-        elif i == 1:
-            kwh += (sum(price[i])/60000) * 4.54
-        else:
-            kwh += (sum(price[i])/60000) * 6.92
-    print(sum(Cost), kwh)
-    print((1-(sum(Cost)/kwh))*100)

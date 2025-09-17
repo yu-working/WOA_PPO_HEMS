@@ -63,7 +63,10 @@ def Price(data):
         room_id = list(data.groupby('room_id'))
         if len(room_id) != 1: # 確認只有一個room_id
             Result = pd.DataFrame([600], columns=['StatusCode'])
-            return Result
+            predicted = {}
+            Result_woa = {}
+            decision = {}
+            return Result, predicted, Result_woa, decision
         #room_id = [elt[1] for elt in room_id] #將ID資料取出
         device_lst = list(data.groupby('appliance_name')) #將同電器資料整理出並以list包裝
         device_name = []
@@ -365,16 +368,18 @@ def Price(data):
         db_conn.DB_disconnect()
         return Result
         '''
-        return Result, predicted
+        return Result, predicted, Result_woa, decision
     #%% 例外紀錄
     except Exception as e:
         logging.error("錯誤類型：%s" % Exception)
         logging.error("錯誤事件：%s" % e)
-        #logging.error('Error Line {}'.format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
+        logging.error('Error Line {}'.format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
         print("錯誤類型：%s" % Exception)
         print("錯誤事件：%s" % e)
         print('Error Line {}'.format(sys.exc_info()[-1].tb_lineno),type(e).__name__,e)
         #db_conn.DB_disconnect()
         Result = pd.DataFrame([400], columns=['StatusCode'])
         predicted = {}
-        return Result, predicted
+        Result_woa = {}
+        decision = {}
+        return Result, predicted, Result_woa, decision

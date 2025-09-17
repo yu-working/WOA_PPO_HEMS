@@ -379,7 +379,7 @@ def ppo_retrain(indoor_data, room_id):
     Result = pd.concat([Env_state, Device_state], axis=1)
     Result.columns = ['env_temp', 'env_humd', 'dehumidifier', 'dehumidifier_humidity',
              'ac_temp', 'ac_fan', 'ac_mode', 'fan_state']
-   # Result.to_csv('C:/Users/hankli/Documents/114計劃相關/調控參數/PPO用電分配參數測試結果.csv')
+   # Result.to_csv('./PPO用電分配參數測試結果.csv')
     end = time.time()
     print(end-start)
 #%% 保存和加載模型測試
