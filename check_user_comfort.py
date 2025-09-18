@@ -27,12 +27,12 @@ except Exception as e:
     raise ValueError("setting DB environment variables encountered an error.\n", e)
 
 
-def send_questionnaire(room_id, questionnaire_data):
+def send_questionnaire(room_username, questionnaire_data):
     """
     透過 REST API 發送熱舒適度問卷通知給指定的 App。
 
     Args:
-        room_id (str): 房間 ID。
+        room_username (str): 房間 ID。
         questionnaire_data (dict): 包含問卷相關資料的字典。
     """
 
@@ -43,7 +43,7 @@ def send_questionnaire(room_id, questionnaire_data):
     params = {
         "secret": API_SECRET,
         "dummy": "true",  # 依照你的說明，先使用 dummy 參數
-        "room": room_id,
+        "username": room_username,
     }
 
     try:
@@ -54,7 +54,7 @@ def send_questionnaire(room_id, questionnaire_data):
         # 解析回傳的 JSON 數據
         result = response.json()
         print(
-            f"✅ Success! Sent questionnaire to Room ID {room_id}. Send results: {result}"
+            f"✅ Success! Sent questionnaire to Room ID {room_username}. Send results: {result}"
         )
 
     except requests.exceptions.HTTPError as http_err:
@@ -68,9 +68,9 @@ def send_questionnaire(room_id, questionnaire_data):
         print(f"❌ An unexpected error occurred: {e}")
 
 
-def get_latest_temp_humidity(room_id: str) -> Optional[Tuple[int, int]]:
+def get_latest_temp_humidity(room_username: str) -> Optional[Tuple[int, int]]:
     """
-    查詢指定使用者(room_id) 最新一筆溫度(op_temperature)與濕度(op_humidity)紀錄，
+    查詢指定使用者(room_username) 最新一筆溫度(op_temperature)與濕度(op_humidity)紀錄，
     並將 record_value 四捨五入成整數後回傳。
 
     回傳格式: (temperature, humidity) 例如 (25, 60)
@@ -92,11 +92,11 @@ def get_latest_temp_humidity(room_id: str) -> Optional[Tuple[int, int]]:
                    capability_name,
                    record_value
             FROM open_energyhub.view_latest_24h_union_parameters_per_minute
-            WHERE room_id = %s
+            WHERE room_username = %s
               AND capability_name IN ('op_temperature', 'op_humidity')
             ORDER BY capability_name, recorded_datetime DESC;
         """
-        cur.execute(query, (room_id,))
+        cur.execute(query, (room_username,))
         rows = cur.fetchall()
 
         temp, hum = None, None
@@ -204,14 +204,14 @@ def background_check_loop():
 
                 if time_difference.total_seconds() > 20 * 60:
                     send_questionnaire(
-                        questionnaire_data[remark]["room_id"],
+                        questionnaire_data[remark]["room_username"],
                         questionnaire_data[remark],
                     )
                     users_to_remove.append(remark)
                 else:
                     try:
                         op_temp, op_hum = get_latest_temp_humidity(
-                            questionnaire_data[remark]["room_id"]
+                            questionnaire_data[remark]["room_username"]
                         )
                         if op_hum is not None and op_temp is not None:
                             if (
@@ -219,7 +219,7 @@ def background_check_loop():
                                 and op_temp <= questionnaire_data[remark]["best_temp"]
                             ):
                                 send_questionnaire(
-                                    questionnaire_data[remark]["room_id"],
+                                    questionnaire_data[remark]["room_username"],
                                     questionnaire_data[remark],
                                 )
                                 users_to_remove.append(remark)
@@ -248,7 +248,7 @@ def background_check_loop():
 
 
 def chek_user_questionnaire_status(
-    room_id: str,
+    room_username: str,
     decision_remark: str,
     best_temp: int,
     best_humd: int,
@@ -270,27 +270,27 @@ def chek_user_questionnaire_status(
     current_time = datetime.now()
     should_update = False
 
-    # 檢查 room_id 是否存在且時間差超過12小時
-    if room_id in time_rec_data:
-        last_update_str = time_rec_data[room_id]
+    # 檢查 room_username 是否存在且時間差超過12小時
+    if room_username in time_rec_data:
+        last_update_str = time_rec_data[room_username]
         last_update_time = datetime.fromisoformat(last_update_str)
         time_difference = current_time - last_update_time
 
         if time_difference.total_seconds() >= 12 * 3600:
             should_update = True
     else:
-        # 如果 room_id 不在 dictionary 中，則視為需要更新
+        # 如果 room_username 不在 dictionary 中，則視為需要更新
         should_update = True
 
     if should_update:
         # 更新時間記錄
-        time_rec_data[room_id] = current_time.isoformat()
+        time_rec_data[room_username] = current_time.isoformat()
         with open(TIME_REC_PATH, "w", encoding="utf-8") as f:
             json.dump(time_rec_data, f, indent=4)
 
         # 準備要儲存的問卷資料
         questionnaire_data = {
-            "room_id": room_id,
+            "room_username": room_username,
             "best_temp": best_temp,
             "best_humd": best_humd,
             "time": current_time.isoformat(),
@@ -310,6 +310,7 @@ def chek_user_questionnaire_status(
         with open(QUESTIONNAIRE_ID_PATH, "w", encoding="utf-8") as f:
             json.dump(remark_data, f, indent=4)
 
-        print(f"room_id {room_id} 的資料已成功更新。")
+        print(f"room_username {room_username} 的資料已成功更新。")
     else:
-        print(f"room_id {room_id} 的資料在過去12小時內已更新，無需再次操作。")
+        print(f"room_username {room_username} 的資料在過去12小時內已更新，無需再次操作。")
+background_check_loop()
